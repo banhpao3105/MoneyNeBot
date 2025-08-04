@@ -146,15 +146,14 @@ function doPost(e) {
       sendBankOptions(chatId); 
       return;
     }
-  }
-
+  
   var allocations = [
-    'Thiết yếu',
+    'Chi tiêu thiết yếu',
+    'Hưởng thụ',
+    'Tiết kiệm dài hạn',
     'Giáo dục',
-    'Tiết kiệm',
-    'Đầu tư',
-    'Tiêu dùng',
-    'Khác'
+    'Tự do tài chính',
+    'Cho đi'
   ];
   if (contents.callback_query) {
     var id_callback = chatId;
@@ -302,9 +301,16 @@ function doPost(e) {
           date = new Date(year, month, day);
         }
         var amount = parseFloat(amountWithDate);
-        var allocation = allocationAndDate || "Thiết yếu";
+        var allocation = allocationAndDate || getCategoryFromAI(item); // Use AI if no allocation is provided
         var type = "ThuNhap"; 
-        if (!isNaN(amount) && allocations.includes(allocation)) {
+        var allocations = [
+          'Chi tiêu thiết yếu',
+          'Hưởng thụ',
+          'Tiết kiệm dài hạn',
+          'Giáo dục',
+          'Tự do tài chính',
+          'Cho đi'
+        ];
           
           addTransactionData(chatId, date, item, amount, allocation, type);
           sendText(
@@ -367,9 +373,16 @@ function doPost(e) {
           date = new Date(year, month, day);
         }
         var amount = parseFloat(amountWithDate) 
-        var allocation = allocationAndDate || "Thiết yếu";
+        var allocation = allocationAndDate || getCategoryFromAI(item); // Use AI if no allocation is provided
         var type = "ChiTieu"; 
-        if (!isNaN(amount) && allocations.includes(allocation)) {
+        var allocations = [
+          'Chi tiêu thiết yếu',
+          'Hưởng thụ',
+          'Tiết kiệm dài hạn',
+          'Giáo dục',
+          'Tự do tài chính',
+          'Cho đi'
+        ];
           
           addTransactionData(chatId, date, item, amount, allocation, type);
           sendText(
@@ -396,119 +409,96 @@ function doPost(e) {
     
     if (text.startsWith("/history")) {
       var parts = text.split(" ");
-      if (parts.length >= 2) {
-        var historyType = parts[1].toLowerCase();
-        var userId = chatId;
-        var startDate;
-        var endDate;
+      var userId = chatId;
+      var startDate, endDate;
 
-        if (historyType === "today") {
-          
-          var today = new Date();
-          startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-          endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-        } else if (historyType === "week") {
-          
-          var today = new Date();
-          var startOfWeek = today.getDate() - today.getDay();
-          startDate = new Date(today.getFullYear(), today.getMonth(), startOfWeek);
-          endDate = new Date(today.getFullYear(), today.getMonth(), startOfWeek + 7);
-        } else if (text.startsWith("/history w")) {
-          var parts = text.split(" ");
-          if (parts.length === 3 && parts[1] === "w") {
-            var weekNumber = parseInt(parts[2]);
-            if (!isNaN(weekNumber) && weekNumber >= 1 && weekNumber <= 4) {
-              
-              var currentDate = new Date();
-              var startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), (weekNumber - 1) * 7 + 1);
-              var endDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), weekNumber * 7 + 1);
+      if (parts.length < 2) {
+        sendText(
+          id_message,
+          'Lệnh không hợp lệ. Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
+        );
+        return;
+      }
 
-              
-              sendTransactionHistoryByDateRange(chatId, userId, startDate, endDate);
-              return;
-            }
-          }
-          sendText(id_message, "Vui lòng cung cấp tuần hợp lệ, bạn có thể thử /history w 1, /history w 2, /history w 3, /history w 4.");
-        } else if (text.startsWith("/history month")) {
-          var parts = text.split(" ");
-          if (parts.length === 3 && parts[1] === "month") {
-            var monthYearStr = parts[2];
-            var [month, year] = monthYearStr.split("/");
-            if (month && year) {
-              month = parseInt(month);
-              year = parseInt(year);
-              if (!isNaN(month) && !isNaN(year)) {
-                
-                var startDate = new Date(year, month - 1, 1);
-                var endDate = new Date(year, month, 0);
-              }
-            } else {
-              sendText(
-                id_message,
-                "Vui lòng cung cấp tháng hợp lệ, ví dụ: /history month MM/YYYY"
-              );
-              return;
-            }
-          }
-        } else if (text.startsWith("/history year")) {
-          var parts = text.split(" ");
-          if (parts.length === 3 && parts[1] === "year") {
-            var year = parseInt(parts[2]);
-            if (!isNaN(year)) {
-              var startDate = new Date(year, 0, 1);
-              var endDate = new Date(year + 1, 0, 1);
-            }
-          } else {
-            sendText(
-              id_message,
-              "Vui lòng cung cấp năm hợp lệ, ví dụ: /history year YYYY"
-            );
-            return;
-          }
-        } else if (parts.length >= 3 && parts[1] === 'd') {
-          
-          var dateParts = parts
-            .slice(2)
-            .join(" ")
-            .split("/");
-          if (dateParts.length === 3) {
-            var year = parseInt(dateParts[2]);
-            var month = parseInt(dateParts[1]) - 1; 
-            var day = parseInt(dateParts[0]);
+      var historyType = parts[1].toLowerCase();
+
+      if (historyType === "today") {
+        var today = new Date();
+        startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      } else if (historyType === "week") {
+        var today = new Date();
+        var dayOfWeek = today.getDay(); // Sunday - 0, Monday - 1, etc.
+        var startOfWeek = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust for Sunday
+        startDate = new Date(today.getFullYear(), today.getMonth(), startOfWeek);
+        endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 7);
+      } else if (historyType === "w" && parts.length === 3) {
+        var weekNumber = parseInt(parts[2]);
+        if (!isNaN(weekNumber) && weekNumber >= 1 && weekNumber <= 4) {
+          var currentDate = new Date();
+          startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), (weekNumber - 1) * 7 + 1);
+          endDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), weekNumber * 7 + 1);
+        } else {
+           sendText(id_message, "Vui lòng cung cấp tuần hợp lệ, bạn có thể thử /history w 1, /history w 2, /history w 3, /history w 4.");
+           return;
+        }
+      } else if (historyType === "month" && parts.length === 3) {
+        var monthYearStr = parts[2];
+        var [month, year] = monthYearStr.split("/");
+        if (month && year && !isNaN(parseInt(month)) && !isNaN(parseInt(year))) {
+          month = parseInt(month);
+          year = parseInt(year);
+          startDate = new Date(year, month - 1, 1);
+          endDate = new Date(year, month, 1); // Start of next month
+        } else {
+          sendText(id_message, "Vui lòng cung cấp tháng hợp lệ, ví dụ: /history month MM/YYYY");
+          return;
+        }
+      } else if (historyType === "year" && parts.length === 3) {
+        var year = parseInt(parts[2]);
+        if (!isNaN(year)) {
+          startDate = new Date(year, 0, 1);
+          endDate = new Date(year + 1, 0, 1);
+        } else {
+           sendText(id_message, "Vui lòng cung cấp năm hợp lệ, ví dụ: /history year YYYY");
+           return;
+        }
+      } else if (historyType === 'd' && parts.length >= 3) {
+        var dateParts = parts.slice(2).join(" ").split("/");
+        if (dateParts.length === 3) {
+          var day = parseInt(dateParts[0]);
+          var month = parseInt(dateParts[1]) - 1;
+          var year = parseInt(dateParts[2]);
+          if(!isNaN(day) && !isNaN(month) && !isNaN(year)){
             startDate = new Date(year, month, day);
-            endDate = new Date(year, month, day + 1); 
+            endDate = new Date(year, month, day + 1);
           } else {
-            sendText(
-              id_message,
-              "Vui lòng cung cấp ngày/tháng/năm hợp lệ, ví dụ: /history d DD/MM/YYYY"
-            );
+            sendText(id_message, "Vui lòng cung cấp ngày/tháng/năm hợp lệ, ví dụ: /history d DD/MM/YYYY");
             return;
           }
         } else {
-          sendText(
-            id_message,
-            'Lệnh không hợp lệ. Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
-          ); return;
-
-
+          sendText(id_message, "Vui lòng cung cấp ngày/tháng/năm hợp lệ, ví dụ: /history d DD/MM/YYYY");
+          return;
         }
-
-        sendTransactionHistoryByDateRange(id_message, userId, startDate, endDate);
       } else {
         sendText(
           id_message,
-          'Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
-        ); return;
+          'Lệnh không hợp lệ. Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
+        );
+        return;
       }
+
+      sendTransactionHistoryByDateRange(id_message, userId, startDate, endDate);
+      return; // Return after sending history
     } else if (text === '/start') {
       
-      sendText(id_message, 'Xin chào ' + userName + '! Money Nè là Bot giúp bạn quản lý Thu/Chi, thu nhập có thể phân bổ ra các hũ và còn các tính năng khác nữa. Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Money Nè tại đây.',
+      sendText(id_message, 'Xin chào ' + userName + '! Thư ký Capybara là Bot giúp bạn quản lý Thu/Chi, thu nhập có thể phân bổ ra các hũ và còn các tính năng khác nữa. Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây.',
         keyBoard
       );
     }
     else if (text === '/menu') {
       
-      sendText(id_message, 'Xin chào ' + userName + '! Menu Money Nè tại đây.',
+      sendText(id_message, 'Xin chào ' + userName + '! Menu Thư ký Capybara tại đây.',
         keyBoard
       );
     } else if (text.startsWith('/del')) {
@@ -605,11 +595,11 @@ function doPost(e) {
       
       sendText(
         id_message,
-        "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Money Nè tại đây."
+        "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây."
       );
     }
   }
-}
+
 
 function addTransactionData(
   userId,
@@ -670,12 +660,12 @@ function getCurrentBalance(userId) {
 
 function getTotalAllocationBalances(userId) {
   var allocations = [
-    'Thiết yếu',
+    'Chi tiêu thiết yếu',
+    'Hưởng thụ',
+    'Tiết kiệm dài hạn',
     'Giáo dục',
-    'Tiết kiệm',
-    'Đầu tư',
-    'Tiêu dùng',
-    'Khác'
+    'Tự do tài chính',
+    'Cho đi'
   ];
   var balances = {};
   for (var i = 0; i < allocations.length; i++) {
@@ -765,8 +755,20 @@ function getSheet(userId) {
 
   if (!sheetId) {
     
+    var folderName = "Money Capybara";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var targetFolder;
+    if (folders.hasNext()) {
+      targetFolder = folders.next();
+    } else {
+      targetFolder = DriveApp.createFolder(folderName);
+    }
+
     var newSpreadsheet = SpreadsheetApp.create('Expense Tracker for ' + userId);
     sheetId = newSpreadsheet.getId();
+    
+    var newFile = DriveApp.getFileById(sheetId);
+    newFile.moveTo(targetFolder);
 
     
     usersSheet.appendRow([userId, sheetId]);
@@ -1181,6 +1183,68 @@ function getRandomGeminiApiKey() {
   return geminiApiKeys[randomIndex];
 }
 
+function getCategoryFromAI(description) {
+  if (!description) {
+    return 'Chi tiêu thiết yếu'; // Default if no description
+  }
+
+  var apiKey = getRandomGeminiApiKey(); 
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=" + apiKey;
+
+  // Detailed prompt based on user's new categories
+  const promptText = `Bạn là một chuyên gia phân loại tài chính. Dựa vào nội dung giao dịch, hãy chọn MỘT danh mục (hũ) phù hợp nhất từ danh sách sau. Chỉ trả về tên danh mục, không giải thích gì thêm.
+  
+  Danh sách các hũ và ví dụ:
+  - **Chi tiêu thiết yếu**: Nhà ở, điện, nước, internet, đi chợ, xăng xe, thuốc men.
+  - **Hưởng thụ**: Xem phim, cà phê, ăn nhà hàng, mua sắm đồ xa xỉ, spa, du lịch, thể thao.
+  - **Tiết kiệm dài hạn**: Mua xe, mua nhà, sửa nhà, quỹ khẩn cấp, mục tiêu lớn (cưới, du học).
+  - **Giáo dục**: Mua sách, khóa học, tham gia hội thảo, workshop.
+  - **Tự do tài chính**: Đầu tư cổ phiếu, góp vốn kinh doanh, mua đất, gửi tiết kiệm sinh lời.
+  - **Cho đi**: Từ thiện, giúp đỡ người thân, quà tặng, đóng góp cộng đồng.
+
+  Nội dung giao dịch: "${description}"
+
+  Hũ phù hợp nhất là gì?`;
+
+  const payload = JSON.stringify({
+    contents: [{
+      parts: [{ text: promptText }]
+    }],
+    generationConfig: {
+      temperature: 0, // Set to 0 for deterministic, consistent results
+      maxOutputTokens: 50,
+      responseMimeType: "text/plain",
+    }
+  });
+
+  const options = {
+    method: "POST",
+    contentType: "application/json",
+    payload: payload,
+    muteHttpExceptions: true // Important to handle potential errors
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText().trim();
+
+    if (responseCode === 200) {
+      // List of valid categories to check against
+      const validCategories = ['Chi tiêu thiết yếu', 'Hưởng thụ', 'Tiết kiệm dài hạn', 'Giáo dục', 'Tự do tài chính', 'Cho đi'];
+      if (validCategories.includes(responseText)) {
+        return responseText;
+      }
+    }
+    // If AI fails, returns a non-standard category, or if there's an error, default to essential spending
+    return 'Chi tiêu thiết yếu';
+  } catch (error) {
+    Logger.log("Error calling AI for categorization: " + error.message);
+    return 'Chi tiêu thiết yếu'; // Default on error
+  }
+}
+
+
 
 
 
@@ -1349,7 +1413,7 @@ function recordTransactionsFromAI(chatId, transactions) {
     var transactionType = typeLower.includes("thu") ? "ThuNhap" : typeLower.includes("chi") ? "ChiTieu" : tx.type;
     
     
-    var allocation = "Thiết yếu";
+    var allocation = getCategoryFromAI(description);
     
     
     addTransactionData(userId, date, description, amount, allocation, transactionType);
@@ -1439,7 +1503,8 @@ function checkEmail() {
               }
             }
             if (!alreadyRecorded) {
-              targetSheet.appendRow([timestamp, explanation, amount, "Thiết yếu", type, timestampEpoch]);
+              var allocation = getCategoryFromAI(explanation); // AI-based categorization
+              targetSheet.appendRow([timestamp, explanation, amount, allocation, type, timestampEpoch]);
               Logger.log("Đã ghi nội dung vào sheet.");
             } else {
               Logger.log("Nội dung đã được ghi trước đó.");
