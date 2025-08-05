@@ -1,104 +1,109 @@
-12:25:13	Chú ý	Đã bắt đầu quá trình thực thi
-12:25:50	Thông tin	=== TEST EACH ALLOCATION ===
-12:25:50	Thông tin	Testing allocation 1: Chi tiêu thiết yếu
-12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_0_Chi tiêu thiết yếu
-12:25:50	Thông tin	  Callback length: 53 chars
-12:25:50	Thông tin	  Callback bytes: 80 bytes
-12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","0","Chi tiêu thiết yếu"]
-12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:50	Thông tin	  Parsed allocation: 0_Chi tiêu thiết yếu
-12:25:50	Thông tin	  ❌ Chi tiêu thiết yếu - PARSING FAILED
-12:25:50	Thông tin	    Expected: 'Chi tiêu thiết yếu'
-12:25:50	Thông tin	    Got: '0_Chi tiêu thiết yếu'
-12:25:50	Thông tin	  ✅ Chi tiêu thiết yếu - SUBCATEGORY KEYBOARD OK
-12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_0_Chi tiêu thiết yếu_Nhà ở
-12:25:50	Thông tin	    Subcategory callback length: 60 chars
-12:25:50	Thông tin	    Subcategory callback bytes: 102 bytes
-12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:50	Thông tin	  ⚠️ Chi tiêu thiết yếu - CALLBACK TOO LONG (>64 bytes)
-12:25:50	Thông tin	
-12:25:50	Thông tin	Testing allocation 2: Hưởng thụ
-12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_1_Hưởng thụ
-12:25:50	Thông tin	  Callback length: 44 chars
-12:25:50	Thông tin	  Callback bytes: 67 bytes
-12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","1","Hưởng thụ"]
-12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:50	Thông tin	  Parsed allocation: 1_Hưởng thụ
-12:25:50	Thông tin	  ❌ Hưởng thụ - PARSING FAILED
-12:25:50	Thông tin	    Expected: 'Hưởng thụ'
-12:25:50	Thông tin	    Got: '1_Hưởng thụ'
-12:25:50	Thông tin	  ✅ Hưởng thụ - SUBCATEGORY KEYBOARD OK
-12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_1_Hưởng thụ_Giải trí
-12:25:50	Thông tin	    Subcategory callback length: 54 chars
-12:25:50	Thông tin	    Subcategory callback bytes: 92 bytes
-12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:50	Thông tin	  ⚠️ Hưởng thụ - CALLBACK TOO LONG (>64 bytes)
-12:25:50	Thông tin	
-12:25:50	Thông tin	Testing allocation 3: Tiết kiệm dài hạn
-12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_2_Tiết kiệm dài hạn
-12:25:50	Thông tin	  Callback length: 52 chars
-12:25:50	Thông tin	  Callback bytes: 87 bytes
-12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","2","Tiết kiệm dài hạn"]
-12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:50	Thông tin	  Parsed allocation: 2_Tiết kiệm dài hạn
-12:25:50	Thông tin	  ❌ Tiết kiệm dài hạn - PARSING FAILED
-12:25:50	Thông tin	    Expected: 'Tiết kiệm dài hạn'
-12:25:50	Thông tin	    Got: '2_Tiết kiệm dài hạn'
-12:25:50	Thông tin	  ✅ Tiết kiệm dài hạn - SUBCATEGORY KEYBOARD OK
-12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_2_Tiết kiệm dài hạn_Mua sắm những món đồ giá trị
-12:25:50	Thông tin	    Subcategory callback length: 82 chars
-12:25:50	Thông tin	    Subcategory callback bytes: 176 bytes
-12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:50	Thông tin	  ⚠️ Tiết kiệm dài hạn - CALLBACK TOO LONG (>64 bytes)
-12:25:50	Thông tin	
-12:25:50	Thông tin	Testing allocation 4: Giáo dục
-12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_3_Giáo dục
-12:25:50	Thông tin	  Callback length: 43 chars
-12:25:50	Thông tin	  Callback bytes: 58 bytes
-12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","3","Giáo dục"]
-12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:50	Thông tin	  Parsed allocation: 3_Giáo dục
-12:25:50	Thông tin	  ❌ Giáo dục - PARSING FAILED
-12:25:50	Thông tin	    Expected: 'Giáo dục'
-12:25:50	Thông tin	    Got: '3_Giáo dục'
-12:25:50	Thông tin	  ✅ Giáo dục - SUBCATEGORY KEYBOARD OK
-12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_3_Giáo dục_Sách
-12:25:51	Thông tin	    Subcategory callback length: 49 chars
-12:25:51	Thông tin	    Subcategory callback bytes: 69 bytes
-12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:51	Thông tin	
-12:25:51	Thông tin	Testing allocation 5: Tự do tài chính
-12:25:51	Thông tin	  Callback data: edit_allocation_tx_1754371550945_4_Tự do tài chính
-12:25:51	Thông tin	  Callback length: 50 chars
-12:25:51	Thông tin	  Callback bytes: 74 bytes
-12:25:51	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","4","Tự do tài chính"]
-12:25:51	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:51	Thông tin	  Parsed allocation: 4_Tự do tài chính
-12:25:51	Thông tin	  ❌ Tự do tài chính - PARSING FAILED
-12:25:51	Thông tin	    Expected: 'Tự do tài chính'
-12:25:51	Thông tin	    Got: '4_Tự do tài chính'
-12:25:51	Thông tin	  ✅ Tự do tài chính - SUBCATEGORY KEYBOARD OK
-12:25:51	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_4_Tự do tài chính_Đầu tư
-12:25:51	Thông tin	    Subcategory callback length: 58 chars
-12:25:51	Thông tin	    Subcategory callback bytes: 102 bytes
-12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:51	Thông tin	  ⚠️ Tự do tài chính - CALLBACK TOO LONG (>64 bytes)
-12:25:51	Thông tin	
-12:25:51	Thông tin	Testing allocation 6: Cho đi
-12:25:51	Thông tin	  Callback data: edit_allocation_tx_1754371550945_5_Cho đi
-12:25:51	Thông tin	  Callback length: 41 chars
-12:25:51	Thông tin	  Callback bytes: 48 bytes
-12:25:51	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","5","Cho đi"]
-12:25:51	Thông tin	  Parsed transactionId: tx_1754371550945
-12:25:51	Thông tin	  Parsed allocation: 5_Cho đi
-12:25:51	Thông tin	  ❌ Cho đi - PARSING FAILED
-12:25:51	Thông tin	    Expected: 'Cho đi'
-12:25:51	Thông tin	    Got: '5_Cho đi'
-12:25:51	Thông tin	  ✅ Cho đi - SUBCATEGORY KEYBOARD OK
-12:25:51	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_5_Cho đi_Từ thiện
-12:25:51	Thông tin	    Subcategory callback length: 51 chars
-12:25:51	Thông tin	    Subcategory callback bytes: 76 bytes
-12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
-12:25:51	Thông tin	
-12:25:51	Thông tin	=== TEST EACH ALLOCATION COMPLETED ===
-12:25:14	Chú ý	Đã hoàn tất quá trình thực thi
+13:43:54	Chú ý	Đã bắt đầu quá trình thực thi
+13:44:31	Thông tin	=== TEST NEW TRANSACTION BACK FLOW ===
+13:44:31	Thông tin	1. Simulate input: 'ăn trưa - 30000'
+13:44:31	Thông tin	2. Testing saveTempTransaction
+13:44:31	Thông tin	  ❌ Error in new transaction back flow test: ReferenceError: saveTempTransaction is not defined
+13:44:31	Thông tin	=== TEST NEW TRANSACTION BACK FLOW COMPLETED ===
+13:43:55	Chú ý	Đã hoàn tất quá trình thực thi
+
+13:44:10	Chú ý	Đã bắt đầu quá trình thực thi
+13:44:47	Thông tin	=== TEST SHORT CALLBACK FORMAT ===
+13:44:47	Thông tin	Testing new short format with transactionId: tx_1754376287587
+13:44:47	Thông tin	Testing allocation 0: Chi tiêu thiết yếu
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_0
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_0
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_0_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Chi tiêu thiết yếu
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Chi tiêu thiết yếu
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Chi tiêu thiết yếu
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Nhà ở
+13:44:47	Thông tin	  ✅ Chi tiêu thiết yếu - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	Testing allocation 1: Hưởng thụ
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_1
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_1
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_1_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Hưởng thụ
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Hưởng thụ
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Hưởng thụ
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Giải trí
+13:44:47	Thông tin	  ✅ Hưởng thụ - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	Testing allocation 2: Tiết kiệm dài hạn
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_2
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_2
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_2_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Tiết kiệm dài hạn
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Tiết kiệm dài hạn
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Tiết kiệm dài hạn
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Mua sắm những món đồ giá trị
+13:44:47	Thông tin	  ✅ Tiết kiệm dài hạn - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	Testing allocation 3: Giáo dục
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_3
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_3
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_3_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Giáo dục
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Giáo dục
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Giáo dục
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Sách
+13:44:47	Thông tin	  ✅ Giáo dục - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	Testing allocation 4: Tự do tài chính
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_4
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_4
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_4_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Tự do tài chính
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Tự do tài chính
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Tự do tài chính
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Đầu tư
+13:44:47	Thông tin	  ✅ Tự do tài chính - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	Testing allocation 5: Cho đi
+13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_5
+13:44:47	Thông tin	  Edit allocation callback length: 29 chars
+13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
+13:44:47	Thông tin	  New allocation callback: allocation_5
+13:44:47	Thông tin	  New allocation callback length: 12 chars
+13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
+13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_5_0
+13:44:47	Thông tin	  Subcategory callback length: 29 chars
+13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
+13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Cho đi
+13:44:47	Thông tin	  ✅ New allocation parsing OK: Cho đi
+13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Cho đi
+13:44:47	Thông tin	  ✅ Subcategory parsing OK: Từ thiện
+13:44:47	Thông tin	  ✅ Cho đi - ALL CALLBACKS WITHIN LIMIT
+13:44:47	Thông tin	
+13:44:47	Thông tin	=== TEST SHORT CALLBACK FORMAT COMPLETED ===
+13:44:10	Chú ý	Đã hoàn tất quá trình thực thi

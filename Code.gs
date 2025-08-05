@@ -62,8 +62,15 @@ function createAllocationKeyboard(transactionId) {
   for (var i = 0; i < allocations.length; i += 2) {
     var row = [];
     
-    // Dùng index thay tên để rút ngắn callback
-    var callbackPrefix = transactionId ? 'edit_alloc_' + transactionId + '_' : 'edit_alloc_';
+    // Phân biệt format cho transaction mới vs edit
+    var callbackPrefix = '';
+    if (transactionId) {
+      // Edit transaction: edit_alloc_tx_123456_0
+      callbackPrefix = 'edit_alloc_' + transactionId + '_';
+    } else {
+      // Transaction mới: allocation_0
+      callbackPrefix = 'allocation_';
+    }
     
     row.push({
       text: allocations[i],
@@ -156,6 +163,21 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
     
     keyboard.push(row);
   }
+  
+  // Thêm nút "Quay lại" ở hàng cuối
+  var backButtonData = '';
+  if (isEdit && transactionId) {
+    // Cho edit flow: quay lại chọn hũ
+    backButtonData = 'edit_transaction_' + transactionId;
+  } else {
+    // Cho transaction mới: quay lại chọn hũ  
+    backButtonData = 'back_to_allocation';
+  }
+  
+  keyboard.push([{
+    text: "🔙 Quay lại chọn hũ",
+    callback_data: backButtonData
+  }]);
   
   return {
     "inline_keyboard": keyboard
@@ -487,6 +509,67 @@ function doPost(e) {
         sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
       }
       return;
+    } else if (data.startsWith('allocation_')) {
+      // Xử lý chọn hũ cho transaction mới
+      Logger.log("DEBUG: allocation callback: " + data);
+      
+      // Parse allocation index từ callback_data: allocation_0
+      var parts = data.split('_');
+      var allocationIndex = parseInt(parts[1]);
+      var allocation = allocations[allocationIndex];
+      
+      Logger.log("DEBUG: Parsed allocationIndex: " + allocationIndex + ", allocation: " + allocation);
+      
+      // Lấy thông tin transaction tạm từ cache
+      var tempTransaction = getTempTransaction(chatId);
+      Logger.log("DEBUG: Retrieved temp transaction: " + JSON.stringify(tempTransaction));
+      
+      if (tempTransaction) {
+        // Cập nhật allocation
+        tempTransaction.allocation = allocation;
+        saveTempTransaction(chatId, tempTransaction);
+        Logger.log("DEBUG: Updated temp transaction allocation to: " + allocation);
+        
+        // Hiển thị keyboard chọn nhãn con
+        var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
+        sendText(chatId, 
+          (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+          tempTransaction.description + " " + 
+          formatNumberWithSeparator(tempTransaction.amount) + " vào hũ " + allocation + 
+          "\nVui lòng chọn nhãn cụ thể:",
+          keyboard
+        );
+        Logger.log("DEBUG: Subcategory keyboard sent for new transaction");
+      } else {
+        Logger.log("DEBUG: No temp transaction found for allocation selection");
+        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.");
+      }
+      return;
+    } else if (data === 'back_to_allocation') {
+      // Xử lý nút "Quay lại" cho transaction mới
+      Logger.log("DEBUG: back_to_allocation callback");
+      
+      // Lấy thông tin transaction tạm từ cache
+      var tempTransaction = getTempTransaction(chatId);
+      Logger.log("DEBUG: Retrieved temp transaction: " + JSON.stringify(tempTransaction));
+      
+      if (tempTransaction) {
+        // Hiển thị lại keyboard chọn hũ
+        var keyboard = createAllocationKeyboard(null); // Không có transactionId cho transaction mới
+        sendText(chatId, 
+          "🔄 Quay lại chọn hũ\n" +
+          (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+          tempTransaction.description + " " + 
+          formatNumberWithSeparator(tempTransaction.amount) + 
+          "\n\nVui lòng chọn hũ:",
+          keyboard
+        );
+        Logger.log("DEBUG: Back to allocation keyboard sent");
+      } else {
+        Logger.log("DEBUG: No temp transaction found for back_to_allocation");
+        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.");
+      }
+      return;
     } else {
       // Log unhandled callback
       Logger.log("DEBUG: Unhandled callback in first block: " + data);
@@ -512,23 +595,6 @@ function doPost(e) {
   }
 
   // (Allocations và functions đã di chuyển thành global)
-
-  // Quản lý cache giao dịch tạm
-  function saveTempTransaction(userId, transactionData) {
-    var cache = CacheService.getScriptCache();
-    cache.put('temp_transaction_' + userId, JSON.stringify(transactionData), 600); // 10 phút
-  }
-
-  function getTempTransaction(userId) {
-    var cache = CacheService.getScriptCache();
-    var data = cache.get('temp_transaction_' + userId);
-    return data ? JSON.parse(data) : null;
-  }
-
-  function clearTempTransaction(userId) {
-    var cache = CacheService.getScriptCache();
-    cache.remove('temp_transaction_' + userId);
-  }
 
   // (Cache functions moved to global scope for reusability)
 
@@ -1284,6 +1350,23 @@ function testSubCategoryKeyboard() {
   Logger.log("TEST SUBCATEGORY KEYBOARD COMPLETED");
 }
 
+// Temp transaction cache functions (Global scope)
+function saveTempTransaction(userId, transactionData) {
+  var cache = CacheService.getScriptCache();
+  cache.put('temp_transaction_' + userId, JSON.stringify(transactionData), 600); // 10 phút
+}
+
+function getTempTransaction(userId) {
+  var cache = CacheService.getScriptCache();
+  var data = cache.get('temp_transaction_' + userId);
+  return data ? JSON.parse(data) : null;
+}
+
+function clearTempTransaction(userId) {
+  var cache = CacheService.getScriptCache();
+  cache.remove('temp_transaction_' + userId);
+}
+
 // Quản lý cache cho chỉnh sửa giao dịch (Global functions)
 function saveTransactionForEdit(userId, transactionInfo, transactionId) {
   var cache = CacheService.getScriptCache();
@@ -1983,13 +2066,21 @@ function testShortCallbackFormat() {
     Logger.log("Testing allocation " + i + ": " + allocation);
     
     try {
-      // 1. Test allocation keyboard (format mới ngắn)
-      var allocationKeyboard = createAllocationKeyboard(transactionId);
-      var allocationButton = allocationKeyboard.inline_keyboard[Math.floor(i/2)][i%2];
+      // 1. Test allocation keyboard (format mới ngắn cho EDIT)
+      var editAllocationKeyboard = createAllocationKeyboard(transactionId);
+      var editAllocationButton = editAllocationKeyboard.inline_keyboard[Math.floor(i/2)][i%2];
       
-      Logger.log("  Allocation callback: " + allocationButton.callback_data);
-      Logger.log("  Allocation callback length: " + allocationButton.callback_data.length + " chars");
-      Logger.log("  Allocation callback bytes: " + encodeURIComponent(allocationButton.callback_data).length + " bytes");
+      Logger.log("  Edit allocation callback: " + editAllocationButton.callback_data);
+      Logger.log("  Edit allocation callback length: " + editAllocationButton.callback_data.length + " chars");
+      Logger.log("  Edit allocation callback bytes: " + encodeURIComponent(editAllocationButton.callback_data).length + " bytes");
+      
+      // 1b. Test allocation keyboard (format mới cho TRANSACTION MỚI)
+      var newAllocationKeyboard = createAllocationKeyboard(null);
+      var newAllocationButton = newAllocationKeyboard.inline_keyboard[Math.floor(i/2)][i%2];
+      
+      Logger.log("  New allocation callback: " + newAllocationButton.callback_data);
+      Logger.log("  New allocation callback length: " + newAllocationButton.callback_data.length + " chars");
+      Logger.log("  New allocation callback bytes: " + encodeURIComponent(newAllocationButton.callback_data).length + " bytes");
       
       // 2. Test subcategory keyboard (format mới ngắn)
       var subKeyboard = createSubCategoryKeyboard(allocation, true, transactionId, i);
@@ -2000,17 +2091,30 @@ function testShortCallbackFormat() {
         Logger.log("  Subcategory callback length: " + subButton.callback_data.length + " chars");
         Logger.log("  Subcategory callback bytes: " + encodeURIComponent(subButton.callback_data).length + " bytes");
         
-        // 3. Test parsing allocation callback
-        var allocParts = allocationButton.callback_data.split('_');
-        if (allocParts.length >= 4 && allocParts[2] === 'tx') {
-          var parsedTransactionId = allocParts[2] + '_' + allocParts[3];
-          var parsedAllocIndex = parseInt(allocParts[4]);
+        // 3. Test parsing EDIT allocation callback
+        var editAllocParts = editAllocationButton.callback_data.split('_');
+        if (editAllocParts.length >= 4 && editAllocParts[2] === 'tx') {
+          var parsedTransactionId = editAllocParts[2] + '_' + editAllocParts[3];
+          var parsedAllocIndex = parseInt(editAllocParts[4]);
           var parsedAllocation = allocations[parsedAllocIndex];
           
           if (parsedAllocation === allocation) {
-            Logger.log("  ✅ Allocation parsing OK: " + parsedAllocation);
+            Logger.log("  ✅ Edit allocation parsing OK: " + parsedAllocation);
           } else {
-            Logger.log("  ❌ Allocation parsing FAILED: Expected " + allocation + ", got " + parsedAllocation);
+            Logger.log("  ❌ Edit allocation parsing FAILED: Expected " + allocation + ", got " + parsedAllocation);
+          }
+        }
+        
+        // 3b. Test parsing NEW allocation callback
+        var newAllocParts = newAllocationButton.callback_data.split('_');
+        if (newAllocParts.length >= 2 && newAllocParts[0] === 'allocation') {
+          var newParsedAllocIndex = parseInt(newAllocParts[1]);
+          var newParsedAllocation = allocations[newParsedAllocIndex];
+          
+          if (newParsedAllocation === allocation) {
+            Logger.log("  ✅ New allocation parsing OK: " + newParsedAllocation);
+          } else {
+            Logger.log("  ❌ New allocation parsing FAILED: Expected " + allocation + ", got " + newParsedAllocation);
           }
         }
         
@@ -2032,11 +2136,17 @@ function testShortCallbackFormat() {
         }
         
         // 5. Check callback length
-        if (encodeURIComponent(allocationButton.callback_data).length <= 64 && 
-            encodeURIComponent(subButton.callback_data).length <= 64) {
+        var editAllocLength = encodeURIComponent(editAllocationButton.callback_data).length;
+        var newAllocLength = encodeURIComponent(newAllocationButton.callback_data).length;
+        var subLength = encodeURIComponent(subButton.callback_data).length;
+        
+        if (editAllocLength <= 64 && newAllocLength <= 64 && subLength <= 64) {
           Logger.log("  ✅ " + allocation + " - ALL CALLBACKS WITHIN LIMIT");
         } else {
           Logger.log("  ⚠️ " + allocation + " - SOME CALLBACKS TOO LONG");
+          if (editAllocLength > 64) Logger.log("    Edit allocation too long: " + editAllocLength + " bytes");
+          if (newAllocLength > 64) Logger.log("    New allocation too long: " + newAllocLength + " bytes");  
+          if (subLength > 64) Logger.log("    Subcategory too long: " + subLength + " bytes");
         }
         
       } else {
@@ -2051,6 +2161,431 @@ function testShortCallbackFormat() {
   }
   
   Logger.log("=== TEST SHORT CALLBACK FORMAT COMPLETED ===");
+}
+
+// Test nút "Quay lại"
+function testBackButton() {
+  Logger.log("=== TEST BACK BUTTON ===");
+  
+  var testUserId = "USER_BACK_TEST";
+  var transactionId = 'tx_' + Date.now();
+  
+  Logger.log("Testing back button functionality");
+  
+  try {
+    // 1. Test subcategory keyboard có nút "Quay lại" (transaction mới)
+    Logger.log("1. Testing back button for new transaction:");
+    var newTransKeyboard = createSubCategoryKeyboard('Chi tiêu thiết yếu', false, null, null);
+    if (newTransKeyboard && newTransKeyboard.inline_keyboard) {
+      var lastRow = newTransKeyboard.inline_keyboard[newTransKeyboard.inline_keyboard.length - 1];
+      var backButton = lastRow[0];
+      
+      Logger.log("  Back button text: " + backButton.text);
+      Logger.log("  Back button callback: " + backButton.callback_data);
+      
+      if (backButton.callback_data === 'back_to_allocation') {
+        Logger.log("  ✅ New transaction back button OK");
+      } else {
+        Logger.log("  ❌ New transaction back button FAILED");
+      }
+    }
+    
+    // 2. Test subcategory keyboard có nút "Quay lại" (edit mode)
+    Logger.log("\n2. Testing back button for edit transaction:");
+    var editKeyboard = createSubCategoryKeyboard('Chi tiêu thiết yếu', true, transactionId, 0);
+    if (editKeyboard && editKeyboard.inline_keyboard) {
+      var lastRow = editKeyboard.inline_keyboard[editKeyboard.inline_keyboard.length - 1]; 
+      var backButton = lastRow[0];
+      
+      Logger.log("  Back button text: " + backButton.text);
+      Logger.log("  Back button callback: " + backButton.callback_data);
+      
+      if (backButton.callback_data === 'edit_transaction_' + transactionId) {
+        Logger.log("  ✅ Edit transaction back button OK");
+      } else {
+        Logger.log("  ❌ Edit transaction back button FAILED");
+      }
+    }
+    
+    // 3. Test callback length cho nút "Quay lại"
+    Logger.log("\n3. Testing back button callback length:");
+    var shortCallback = 'back_to_allocation';
+    var longCallback = 'edit_transaction_' + transactionId;
+    
+    Logger.log("  Short callback: " + shortCallback + " (" + shortCallback.length + " chars, " + encodeURIComponent(shortCallback).length + " bytes)");
+    Logger.log("  Long callback: " + longCallback + " (" + longCallback.length + " chars, " + encodeURIComponent(longCallback).length + " bytes)");
+    
+    if (encodeURIComponent(shortCallback).length <= 64 && encodeURIComponent(longCallback).length <= 64) {
+      Logger.log("  ✅ All back button callbacks within limit");
+    } else {
+      Logger.log("  ⚠️ Some back button callbacks too long");
+    }
+    
+    Logger.log("  ✅ Back button test completed successfully");
+    
+  } catch (error) {
+    Logger.log("  ❌ Error testing back button: " + error.toString());
+  }
+  
+  Logger.log("=== TEST BACK BUTTON COMPLETED ===");
+}
+
+// Test luồng quay lại cho transaction mới
+function testNewTransactionBackFlow() {
+  Logger.log("=== TEST NEW TRANSACTION BACK FLOW ===");
+  
+  var testUserId = "USER_NEW_BACK_TEST";
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Simulate người dùng nhập "ăn trưa - 30000"
+    Logger.log("1. Simulate input: 'ăn trưa - 30000'");
+    
+    var description = "ăn trưa";
+    var amount = 30000;
+    var type = "expense";
+    var defaultAllocation = "Chi tiêu thiết yếu"; // Default allocation
+    
+    // 2. Test lưu temp transaction
+    Logger.log("2. Testing saveTempTransaction");
+    var tempTransaction = {
+      description: description,
+      amount: amount,
+      type: type,
+      allocation: defaultAllocation
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Saved temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // 3. Test lấy temp transaction
+    Logger.log("3. Testing getTempTransaction");
+    var retrievedTemp = getTempTransaction(testChatId);
+    Logger.log("  Retrieved temp transaction: " + JSON.stringify(retrievedTemp));
+    
+    if (retrievedTemp && retrievedTemp.description === description) {
+      Logger.log("  ✅ Temp transaction save/retrieve OK");
+    } else {
+      Logger.log("  ❌ Temp transaction save/retrieve FAILED");
+    }
+    
+    // 4. Test tạo subcategory keyboard với nút quay lại
+    Logger.log("4. Testing subcategory keyboard with back button");
+    var subKeyboard = createSubCategoryKeyboard(defaultAllocation, false, null, null);
+    
+    if (subKeyboard && subKeyboard.inline_keyboard) {
+      var lastRow = subKeyboard.inline_keyboard[subKeyboard.inline_keyboard.length - 1];
+      var backButton = lastRow[0];
+      
+      Logger.log("  Back button text: " + backButton.text);
+      Logger.log("  Back button callback: " + backButton.callback_data);
+      
+      if (backButton.callback_data === 'back_to_allocation') {
+        Logger.log("  ✅ Back button in subcategory keyboard OK");
+      } else {
+        Logger.log("  ❌ Back button in subcategory keyboard FAILED");
+      }
+    }
+    
+    // 5. Test allocation keyboard cho transaction mới
+    Logger.log("5. Testing allocation keyboard for new transaction");
+    var allocKeyboard = createAllocationKeyboard(null);
+    
+    if (allocKeyboard && allocKeyboard.inline_keyboard) {
+      Logger.log("  Allocation keyboard created successfully");
+      Logger.log("  Number of rows: " + allocKeyboard.inline_keyboard.length);
+      
+      // Log first few buttons
+      for (var i = 0; i < Math.min(2, allocKeyboard.inline_keyboard.length); i++) {
+        var row = allocKeyboard.inline_keyboard[i];
+        for (var j = 0; j < row.length; j++) {
+          Logger.log("    Button: " + row[j].text + " -> " + row[j].callback_data);
+        }
+      }
+      Logger.log("  ✅ Allocation keyboard for new transaction OK");
+    } else {
+      Logger.log("  ❌ Allocation keyboard for new transaction FAILED");
+    }
+    
+    // 6. Test callback format cho allocation buttons
+    Logger.log("6. Testing allocation callback format");
+    if (allocKeyboard && allocKeyboard.inline_keyboard && allocKeyboard.inline_keyboard[0]) {
+      var firstButton = allocKeyboard.inline_keyboard[0][0];
+      var callbackData = firstButton.callback_data;
+      
+      Logger.log("  First allocation callback: " + callbackData);
+      
+      // Check if callback starts with expected format for new transactions
+      if (callbackData.startsWith('allocation_')) {
+        Logger.log("  ✅ New transaction callback format correct: " + callbackData);
+      } else {
+        Logger.log("  ❌ WARNING: New transaction using wrong format: " + callbackData);
+        Logger.log("  Expected format should be 'allocation_X' for new transactions");
+      }
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    Logger.log("7. Cleaned up temp transaction");
+    
+    Logger.log("  ✅ New transaction back flow test completed");
+    
+  } catch (error) {
+    Logger.log("  ❌ Error in new transaction back flow test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST NEW TRANSACTION BACK FLOW COMPLETED ===");
+}
+
+// Test debug callback "back_to_allocation"
+function debugBackToAllocation() {
+  Logger.log("=== DEBUG BACK TO ALLOCATION ===");
+  
+  var testUserId = "USER_DEBUG_BACK";
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Tạo temp transaction giống flow thực tế
+    Logger.log("1. Creating temp transaction như flow thực tế");
+    var tempTransaction = {
+      description: "c",
+      amount: 9000,
+      type: "expense", 
+      allocation: "Chi tiêu thiết yếu"
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Saved temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // 2. Test lấy temp transaction
+    var retrieved = getTempTransaction(testChatId);
+    Logger.log("  Retrieved temp transaction: " + JSON.stringify(retrieved));
+    
+    if (retrieved) {
+      Logger.log("  ✅ Temp transaction exists in cache");
+    } else {
+      Logger.log("  ❌ Temp transaction NOT found in cache");
+    }
+    
+    // 3. Test tạo allocation keyboard 
+    Logger.log("3. Testing allocation keyboard creation");
+    var allocKeyboard = createAllocationKeyboard(null);
+    
+    if (allocKeyboard && allocKeyboard.inline_keyboard) {
+      Logger.log("  ✅ Allocation keyboard created successfully");
+      Logger.log("  Number of buttons: " + allocKeyboard.inline_keyboard.length);
+      
+      // Log first row buttons
+      var firstRow = allocKeyboard.inline_keyboard[0];
+      for (var i = 0; i < firstRow.length; i++) {
+        Logger.log("    Button " + i + ": " + firstRow[i].text + " -> " + firstRow[i].callback_data);
+      }
+    } else {
+      Logger.log("  ❌ Failed to create allocation keyboard");
+    }
+    
+    // 4. Test tạo message text
+    Logger.log("4. Testing message text creation");
+    var messageText = (retrieved.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+      retrieved.description + " " + 
+      formatNumberWithSeparator(retrieved.amount) + 
+      "\nChọn hũ chi tiêu:";
+    
+    Logger.log("  Message text: " + messageText);
+    
+    // 5. Test callback data format trong subcategory keyboard
+    Logger.log("5. Testing back button in subcategory keyboard");
+    var subKeyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    
+    if (subKeyboard && subKeyboard.inline_keyboard) {
+      var lastRow = subKeyboard.inline_keyboard[subKeyboard.inline_keyboard.length - 1];
+      var backButton = lastRow[0];
+      
+      Logger.log("  Back button text: " + backButton.text);
+      Logger.log("  Back button callback: " + backButton.callback_data);
+      
+      if (backButton.callback_data === 'back_to_allocation') {
+        Logger.log("  ✅ Back button callback format correct");
+      } else {
+        Logger.log("  ❌ Back button callback format wrong: " + backButton.callback_data);
+      }
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    Logger.log("6. Cleaned up temp transaction");
+    
+  } catch (error) {
+    Logger.log("  ❌ Error in back to allocation debug: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG BACK TO ALLOCATION COMPLETED ===");
+}
+
+// Test xử lý callback back_to_allocation
+function simulateBackToAllocationCallback() {
+  Logger.log("=== SIMULATE BACK TO ALLOCATION CALLBACK ===");
+  
+  var testUserId = "USER_SIMULATE_BACK";
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Setup temp transaction
+    var tempTransaction = {
+      description: "c",
+      amount: 9000,
+      type: "expense",
+      allocation: "Chi tiêu thiết yếu"
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("1. Setup temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // 2. Simulate callback processing logic
+    Logger.log("2. Simulating back_to_allocation callback processing");
+    var data = 'back_to_allocation';
+    
+    if (data === 'back_to_allocation') {
+      Logger.log("  ✅ Callback matches 'back_to_allocation'");
+      
+      // Lấy thông tin transaction tạm từ cache
+      var retrievedTemp = getTempTransaction(testChatId);
+      Logger.log("  Retrieved temp transaction: " + JSON.stringify(retrievedTemp));
+      
+      if (retrievedTemp) {
+        Logger.log("  ✅ Temp transaction found");
+        
+        // Tạo keyboard chọn hũ
+        var keyboard = createAllocationKeyboard(null);
+        Logger.log("  ✅ Allocation keyboard created");
+        
+        // Tạo message text
+        var messageText = (retrievedTemp.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+          retrievedTemp.description + " " + 
+          formatNumberWithSeparator(retrievedTemp.amount) + 
+          "\nChọn hũ chi tiêu:";
+        
+        Logger.log("  Message would be: " + messageText);
+        Logger.log("  ✅ Back to allocation flow completed successfully");
+        
+      } else {
+        Logger.log("  ❌ No temp transaction found");
+      }
+    } else {
+      Logger.log("  ❌ Callback does not match 'back_to_allocation'");
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    
+  } catch (error) {
+    Logger.log("  ❌ Error in simulate callback: " + error.toString());
+  }
+  
+  Logger.log("=== SIMULATE BACK TO ALLOCATION CALLBACK COMPLETED ===");
+}
+
+// Debug chọn hũ sau khi back
+function debugAllocationAfterBack() {
+  Logger.log("=== DEBUG ALLOCATION AFTER BACK ===");
+  
+  var testUserId = "USER_DEBUG_AFTER_BACK";
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Setup temp transaction như flow thực tế (expense)
+    Logger.log("1. Setup temp transaction như expense flow");
+    var tempTransaction = {
+      date: new Date().toISOString().split('T')[0],
+      description: "c", 
+      amount: 9000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu" // Từ expense flow (line 831)
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Saved temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // 2. Test callback data format từ allocation keyboard
+    Logger.log("2. Testing allocation keyboard callback format");
+    var allocKeyboard = createAllocationKeyboard(null);
+    
+    if (allocKeyboard && allocKeyboard.inline_keyboard) {
+      var firstButton = allocKeyboard.inline_keyboard[0][0]; // "Chi tiêu thiết yếu"
+      var secondButton = allocKeyboard.inline_keyboard[0][1]; // "Hưởng thụ"
+      
+      Logger.log("  First button: " + firstButton.text + " -> " + firstButton.callback_data);
+      Logger.log("  Second button: " + secondButton.text + " -> " + secondButton.callback_data);
+      
+      // 3. Simulate chọn hũ đầu tiên (allocation_0)
+      Logger.log("3. Simulating allocation_0 callback");
+      var data = firstButton.callback_data; // Should be "allocation_0"
+      
+      if (data.startsWith('allocation_')) {
+        Logger.log("  ✅ Callback matches allocation_ pattern: " + data);
+        
+        // Parse allocation index
+        var parts = data.split('_');
+        var allocationIndex = parseInt(parts[1]);
+        var allocation = allocations[allocationIndex];
+        
+        Logger.log("  Parsed allocationIndex: " + allocationIndex);
+        Logger.log("  Parsed allocation: " + allocation);
+        
+        if (allocation) {
+          Logger.log("  ✅ Allocation found: " + allocation);
+          
+          // Get temp transaction
+          var retrievedTemp = getTempTransaction(testChatId);
+          Logger.log("  Retrieved temp transaction: " + JSON.stringify(retrievedTemp));
+          
+          if (retrievedTemp) {
+            Logger.log("  ✅ Temp transaction found");
+            
+            // Update allocation
+            retrievedTemp.allocation = allocation;
+            saveTempTransaction(testChatId, retrievedTemp);
+            Logger.log("  ✅ Updated temp transaction allocation to: " + allocation);
+            
+            // Test subcategory keyboard creation
+            var subKeyboard = createSubCategoryKeyboard(allocation, false, null, null);
+            if (subKeyboard && subKeyboard.inline_keyboard) {
+              Logger.log("  ✅ Subcategory keyboard created");
+              Logger.log("  Number of subcategory rows: " + subKeyboard.inline_keyboard.length);
+              
+              // Test message text
+              var messageText = (retrievedTemp.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+                retrievedTemp.description + " " + 
+                formatNumberWithSeparator(retrievedTemp.amount) + " vào hũ " + allocation + 
+                "\nVui lòng chọn nhãn cụ thể:";
+              
+              Logger.log("  Message would be: " + messageText);
+              Logger.log("  ✅ Allocation after back flow completed successfully");
+              
+            } else {
+              Logger.log("  ❌ Failed to create subcategory keyboard");
+            }
+          } else {
+            Logger.log("  ❌ No temp transaction found");
+          }
+        } else {
+          Logger.log("  ❌ Allocation not found for index: " + allocationIndex);
+        }
+      } else {
+        Logger.log("  ❌ Callback does not match allocation_ pattern: " + data);
+      }
+    } else {
+      Logger.log("  ❌ Failed to create allocation keyboard");
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    
+  } catch (error) {
+    Logger.log("  ❌ Error in allocation after back debug: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG ALLOCATION AFTER BACK COMPLETED ===");
 }
 
 // Hàm test simulate nhấn nút chỉnh sửa
