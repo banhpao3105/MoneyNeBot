@@ -746,6 +746,93 @@ function getTransactionHistory(userId, timeframe) {
   }
   return transactions;
 }
+function getOrCreateFolder(folderName) {
+  // Tìm thư mục theo tên
+  var folders = DriveApp.getFoldersByName(folderName);
+  
+  if (folders.hasNext()) {
+    // Nếu tìm thấy thư mục, trả về thư mục đầu tiên
+    Logger.log("Tìm thấy thư mục: " + folderName);
+    return folders.next();
+  } else {
+    // Nếu chưa có, tạo thư mục mới
+    Logger.log("Tạo thư mục mới: " + folderName);
+    return DriveApp.createFolder(folderName);
+  }
+}
+
+// Hàm debug để kiểm tra thư mục và file
+function debugFolderAndFiles() {
+  Logger.log("=== DEBUG FOLDER AND FILES ===");
+  
+  // Kiểm tra thư mục Money Capybara
+  var folders = DriveApp.getFoldersByName('Money Capybara');
+  if (folders.hasNext()) {
+    var folder = folders.next();
+    Logger.log("Thư mục Money Capybara tồn tại. ID: " + folder.getId());
+    
+    // Liệt kê file trong thư mục
+    var files = folder.getFiles();
+    var fileCount = 0;
+    while (files.hasNext()) {
+      var file = files.next();
+      Logger.log("File trong thư mục: " + file.getName() + " (ID: " + file.getId() + ")");
+      fileCount++;
+    }
+    Logger.log("Tổng số file trong thư mục: " + fileCount);
+  } else {
+    Logger.log("Thư mục Money Capybara không tồn tại");
+  }
+  
+  // Kiểm tra file Expense Tracker ở thư mục gốc
+  var rootFiles = DriveApp.getRootFolder().getFilesByName('Expense Tracker');
+  var rootFileCount = 0;
+  while (rootFiles.hasNext()) {
+    var file = rootFiles.next();
+    Logger.log("File Expense Tracker ở thư mục gốc: " + file.getName());
+    rootFileCount++;
+  }
+  Logger.log("Số file Expense Tracker ở thư mục gốc: " + rootFileCount);
+}
+
+// Hàm test tạo file mới để kiểm tra logic thư mục
+function testCreateFileInFolder() {
+  Logger.log("=== TEST CREATE FILE IN FOLDER ===");
+  
+  try {
+    // Tạo file test
+    var testUserId = "TEST_USER_" + new Date().getTime();
+    var newSpreadsheet = SpreadsheetApp.create('Test Expense Tracker for ' + testUserId);
+    var sheetId = newSpreadsheet.getId();
+    Logger.log("Tạo file test thành công. ID: " + sheetId);
+    
+    // Lấy thư mục Money Capybara
+    var targetFolder = getOrCreateFolder('Money Capybara');
+    Logger.log("Lấy/tạo thư mục thành công. ID: " + targetFolder.getId());
+    
+    // Di chuyển file vào thư mục
+    var file = DriveApp.getFileById(sheetId);
+    Logger.log("Lấy file thành công. Tên: " + file.getName());
+    
+    // Thêm file vào thư mục đích
+    targetFolder.addFile(file);
+    Logger.log("Thêm file vào thư mục thành công");
+    
+    // Xóa file khỏi thư mục gốc
+    var rootFolder = DriveApp.getRootFolder();
+    rootFolder.removeFile(file);
+    Logger.log("Xóa file khỏi thư mục gốc thành công");
+    
+    Logger.log("TEST HOÀN THÀNH - File test đã được tạo và di chuyển vào thư mục Money Capybara");
+    
+    // Chạy debug để kiểm tra kết quả
+    debugFolderAndFiles();
+    
+  } catch (error) {
+    Logger.log("LỖI trong quá trình test: " + error.toString());
+  }
+}
+
 function getSheet(userId) {
   
 
@@ -767,6 +854,19 @@ function getSheet(userId) {
     
     var newSpreadsheet = SpreadsheetApp.create('Expense Tracker for ' + userId);
     sheetId = newSpreadsheet.getId();
+    
+    // Lấy thư mục "Money Capybara"
+    var targetFolder = getOrCreateFolder('Money Capybara');
+    
+    // Di chuyển file vào thư mục
+    var file = DriveApp.getFileById(sheetId);
+    
+    // Thêm file vào thư mục đích
+    targetFolder.addFile(file);
+    
+    // Xóa file khỏi thư mục gốc (My Drive)
+    var rootFolder = DriveApp.getRootFolder();
+    rootFolder.removeFile(file);
 
     
     usersSheet.appendRow([userId, sheetId]);
