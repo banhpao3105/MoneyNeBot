@@ -23,11 +23,11 @@ function formatNumberWithSeparator(number) {
     .toString()
 }
 
-function addTransactionData(userId, date, description, amount, allocation, type) {
+function addTransactionData(userId, date, description, amount, allocation, type, subCategory) {
   var sheet = getSheet(userId); 
-
+  subCategory = subCategory || ""; // Mặc định rỗng nếu không có
   
-  sheet.appendRow([date, description, amount, allocation, type]);
+  sheet.appendRow([date, description, amount, allocation, type, subCategory]);
 }
 
 
@@ -128,6 +128,38 @@ function doPost(e) {
       saveBankToSheet(chatId, bankName); 
       sendText(chatId, "Ngân hàng của bạn đã được kết nối thành công: " + bankName);
       return;
+    } else if (data.startsWith('subcategory_')) {
+      // Xử lý chọn nhãn con
+      var parts = data.split('_');
+      var allocation = parts[1];
+      var subCategory = parts.slice(2).join('_');
+      
+      // Lấy thông tin giao dịch tạm từ cache (sẽ implement sau)
+      var tempTransaction = getTempTransaction(chatId);
+      if (tempTransaction) {
+        // Lưu giao dịch với subcategory
+        addTransactionData(
+          chatId, 
+          tempTransaction.date, 
+          tempTransaction.description, 
+          tempTransaction.amount, 
+          allocation, 
+          tempTransaction.type,
+          subCategory
+        );
+        
+        // Xóa cache
+        clearTempTransaction(chatId);
+        
+        // Thông báo thành công
+        var typeText = tempTransaction.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        sendText(chatId, 
+          "Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+          " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          " vào hũ " + allocation + " với nhãn " + subCategory
+        );
+      }
+      return;
     }
   } else if (contents.message) {
     chatId = contents.message.chat.id;
@@ -156,6 +188,64 @@ function doPost(e) {
     'Tự do tài chính',
     'Cho đi'
   ];
+
+  // Cấu trúc nhãn con cho từng hũ
+  var subCategories = {
+    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn uống', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+    'Hưởng thụ': ['Giải trí', 'Ăn ngoài', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
+    'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
+    'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
+    'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
+    'Cho đi': ['Từ thiện', 'Giúp đỡ người thân', 'Quà tặng', 'Đóng góp cho cộng đồng']
+  };
+
+  // Tạo keyboard cho việc chọn nhãn con
+  function createSubCategoryKeyboard(allocation) {
+    if (!subCategories[allocation]) return null;
+    
+    var keyboard = [];
+    var subs = subCategories[allocation];
+    
+    // Tạo hàng keyboard, mỗi hàng 2 button
+    for (var i = 0; i < subs.length; i += 2) {
+      var row = [];
+      row.push({
+        text: subs[i],
+        callback_data: 'subcategory_' + allocation + '_' + subs[i]
+      });
+      
+      if (i + 1 < subs.length) {
+        row.push({
+          text: subs[i + 1],
+          callback_data: 'subcategory_' + allocation + '_' + subs[i + 1]
+        });
+      }
+      
+      keyboard.push(row);
+    }
+    
+    return {
+      "inline_keyboard": keyboard
+    };
+  }
+
+  // Quản lý cache giao dịch tạm
+  function saveTempTransaction(userId, transactionData) {
+    var cache = CacheService.getScriptCache();
+    cache.put('temp_transaction_' + userId, JSON.stringify(transactionData), 600); // 10 phút
+  }
+
+  function getTempTransaction(userId) {
+    var cache = CacheService.getScriptCache();
+    var data = cache.get('temp_transaction_' + userId);
+    return data ? JSON.parse(data) : null;
+  }
+
+  function clearTempTransaction(userId) {
+    var cache = CacheService.getScriptCache();
+    cache.remove('temp_transaction_' + userId);
+  }
+
   if (contents.callback_query) {
     var id_callback = chatId;
     var data = contents.callback_query.data;
@@ -305,12 +395,22 @@ function doPost(e) {
         var allocation = allocationAndDate || "Chi tiêu thiết yếu";
         var type = "ThuNhap"; 
         if (!isNaN(amount) && allocations.includes(allocation)) {
+          // Lưu thông tin giao dịch tạm
+          saveTempTransaction(chatId, {
+            date: date,
+            description: item,
+            amount: amount,
+            allocation: allocation,
+            type: type
+          });
           
-          addTransactionData(chatId, date, item, amount, allocation, type);
+          // Hiển thị keyboard chọn nhãn con
+          var keyboard = createSubCategoryKeyboard(allocation);
           sendText(
             id_message,
-            "Bạn đã thu nhâp: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " vào ngày " + formatDate(date) + " và phân bổ thu nhập của bạn vào hũ " +
-            allocation + "."
+            "Thu nhập: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+            " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+            keyboard
           );
           return;
         } else {
@@ -370,12 +470,22 @@ function doPost(e) {
         var allocation = allocationAndDate || "Chi tiêu thiết yếu";
         var type = "ChiTieu"; 
         if (!isNaN(amount) && allocations.includes(allocation)) {
+          // Lưu thông tin giao dịch tạm
+          saveTempTransaction(chatId, {
+            date: date,
+            description: item,
+            amount: amount,
+            allocation: allocation,
+            type: type
+          });
           
-          addTransactionData(chatId, date, item, amount, allocation, type);
+          // Hiển thị keyboard chọn nhãn con
+          var keyboard = createSubCategoryKeyboard(allocation);
           sendText(
             id_message,
-            "Bạn đã chi tiêu: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " vào ngày " + formatDate(date) + " và phân bổ chi tiêu của bạn vào hũ " +
-            allocation + "."
+            "Chi tiêu: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+            " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+            keyboard
           );
           return;
         } else {
@@ -611,30 +721,22 @@ function doPost(e) {
   }
 }
 
-function addTransactionData(
-  userId,
-  date,
-  description,
-  amount,
-  allocation,
-  type
-) {
-  var sheet = getSheet(userId);
-  sheet.appendRow([date, description, amount, allocation, type]);
-}
 
-function addIncomeData(userId, date, content, amount, allocation) {
+
+function addIncomeData(userId, date, content, amount, allocation, subCategory) {
   var sheet = getSheet(userId);
+  subCategory = subCategory || "";
   
   var type = "ThuNhap";
-  sheet.appendRow([date, content, amount, allocation, type]);
+  sheet.appendRow([date, content, amount, allocation, type, subCategory]);
 }
 
-function addExpenseData(userId, date, item, amount, allocation) {
+function addExpenseData(userId, date, item, amount, allocation, subCategory) {
   var sheet = getSheet(userId);
+  subCategory = subCategory || "";
   
   var type = "ChiTieu";
-  sheet.appendRow([date, item, amount, allocation, type]);
+  sheet.appendRow([date, item, amount, allocation, type, subCategory]);
 }
 
 function getTotalIncome(userId) {
@@ -833,6 +935,74 @@ function testCreateFileInFolder() {
   }
 }
 
+// Hàm test tính năng subcategory
+function testSubCategoryKeyboard() {
+  Logger.log("=== TEST SUBCATEGORY KEYBOARD ===");
+  
+  var allocations = [
+    'Chi tiêu thiết yếu',
+    'Hưởng thụ',
+    'Tiết kiệm dài hạn',
+    'Giáo dục',
+    'Tự do tài chính',
+    'Cho đi'
+  ];
+
+  var subCategories = {
+    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn uống', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+    'Hưởng thụ': ['Giải trí', 'Ăn ngoài', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
+    'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
+    'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
+    'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
+    'Cho đi': ['Từ thiện', 'Giúp đỡ người thân', 'Quà tặng', 'Đóng góp cho cộng đồng']
+  };
+  
+  function createSubCategoryKeyboard(allocation) {
+    if (!subCategories[allocation]) return null;
+    
+    var keyboard = [];
+    var subs = subCategories[allocation];
+    
+    for (var i = 0; i < subs.length; i += 2) {
+      var row = [];
+      row.push({
+        text: subs[i],
+        callback_data: 'subcategory_' + allocation + '_' + subs[i]
+      });
+      
+      if (i + 1 < subs.length) {
+        row.push({
+          text: subs[i + 1],
+          callback_data: 'subcategory_' + allocation + '_' + subs[i + 1]
+        });
+      }
+      
+      keyboard.push(row);
+    }
+    
+    return {
+      "inline_keyboard": keyboard
+    };
+  }
+  
+  // Test tất cả allocation
+  for (var i = 0; i < allocations.length; i++) {
+    var allocation = allocations[i];
+    Logger.log("Testing keyboard for: " + allocation);
+    var keyboard = createSubCategoryKeyboard(allocation);
+    if (keyboard) {
+      Logger.log("Keyboard created with " + keyboard.inline_keyboard.length + " rows");
+      for (var j = 0; j < keyboard.inline_keyboard.length; j++) {
+        var row = keyboard.inline_keyboard[j];
+        Logger.log("Row " + (j+1) + ": " + row.map(function(btn) { return btn.text; }).join(", "));
+      }
+    }
+    Logger.log("---");
+  }
+  
+  Logger.log("TEST SUBCATEGORY KEYBOARD COMPLETED");
+}
+
 function getSheet(userId) {
   
 
@@ -873,12 +1043,12 @@ function getSheet(userId) {
 
     
     var sheet = newSpreadsheet.getActiveSheet();
-    sheet.getRange('A1:E1').setValues([
-      ["Date", "Description", "Amount", "Allocation", "Type"]
+    sheet.getRange('A1:F1').setValues([
+      ["Date", "Description", "Amount", "Allocation", "Type", "SubCategory"]
     ]);
 
     
-    sheet.deleteColumns(6, 21); 
+    sheet.deleteColumns(7, 20); 
 
     
     var numRows = sheet.getMaxRows();
@@ -1452,7 +1622,7 @@ function recordTransactionsFromAI(chatId, transactions) {
     var allocation = "Chi tiêu thiết yếu";
     
     
-    addTransactionData(userId, date, description, amount, allocation, transactionType);
+    addTransactionData(userId, date, description, amount, allocation, transactionType, "");
     
     
     if (transactionType === "ThuNhap") {
@@ -1539,7 +1709,7 @@ function checkEmail() {
               }
             }
             if (!alreadyRecorded) {
-              targetSheet.appendRow([timestamp, explanation, amount, "Chi tiêu thiết yếu", type, timestampEpoch]);
+              targetSheet.appendRow([timestamp, explanation, amount, "Chi tiêu thiết yếu", type, "", timestampEpoch]);
               Logger.log("Đã ghi nội dung vào sheet.");
             } else {
               Logger.log("Nội dung đã được ghi trước đó.");
