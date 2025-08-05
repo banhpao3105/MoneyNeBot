@@ -1,0 +1,19 @@
+11:06:52	Chú ý	Đã bắt đầu quá trình thực thi
+11:07:29	Thông tin	=== TEST EDIT BUTTON ===
+11:07:29	Thông tin	1. Saving mock transaction to cache...
+11:07:29	Thông tin	2. Simulating edit_transaction callback...
+11:07:29	Thông tin	3. Calling doPost with mock request...
+11:07:29	Thông tin	=== DOPOST DEBUG ===
+11:07:29	Thông tin	Request contents: {"callback_query":{"from":{"id":"TEST_EDIT_123","first_name":"TestUser"},"data":"edit_transaction"}}
+11:07:29	Thông tin	CALLBACK QUERY DETECTED:
+11:07:29	Thông tin	Chat ID: TEST_EDIT_123
+11:07:29	Thông tin	Callback data: edit_transaction
+11:07:29	Thông tin	DEBUG: edit_transaction callback received for user: TEST_EDIT_123
+11:07:29	Thông tin	DEBUG: transactionInfo from cache: {"userId":"TEST_EDIT_123","date":"2025-08-05T04:07:29.842Z","description":"Cà phê sáng","amount":25000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":3}
+11:07:29	Thông tin	DEBUG: Allocation keyboard created with 3 rows
+11:07:29	Thông tin	Keyboard row 1: [{"text":"Chi tiêu thiết yếu","callback_data":"edit_allocation_Chi tiêu thiết yếu"},{"text":"Hưởng thụ","callback_data":"edit_allocation_Hưởng thụ"}]
+11:07:29	Thông tin	Keyboard row 2: [{"text":"Tiết kiệm dài hạn","callback_data":"edit_allocation_Tiết kiệm dài hạn"},{"text":"Giáo dục","callback_data":"edit_allocation_Giáo dục"}]
+11:07:29	Thông tin	Keyboard row 3: [{"text":"Tự do tài chính","callback_data":"edit_allocation_Tự do tài chính"},{"text":"Cho đi","callback_data":"edit_allocation_Cho đi"}]
+11:07:30	Thông tin	❌ doPost failed: Exception: Request failed for https://api.telegram.org returned code 400. Truncated server response: {"ok":false,"error_code":400,"description":"Bad Request: chat not found"} (use muteHttpExceptions option to examine full response)
+11:07:30	Thông tin	=== TEST EDIT BUTTON COMPLETED ===
+11:06:52	Chú ý	Đã hoàn tất quá trình thực thi

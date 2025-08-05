@@ -23,6 +23,84 @@ function formatNumberWithSeparator(number) {
     .toString()
 }
 
+// Global allocations array (sử dụng cho toàn bộ ứng dụng)
+var allocations = [
+  'Chi tiêu thiết yếu',
+  'Hưởng thụ',
+  'Tiết kiệm dài hạn',
+  'Giáo dục',
+  'Tự do tài chính',
+  'Cho đi'
+];
+
+// Global subcategories object
+var subCategories = {
+  'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+  'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
+  'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
+  'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
+  'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
+  'Cho đi': ['Từ thiện', 'Giúp đỡ người thân', 'Quà tặng', 'Đóng góp cho cộng đồng']
+};
+
+// Global createAllocationKeyboard function
+function createAllocationKeyboard() {
+  var keyboard = [];
+  
+  // Tạo hàng keyboard, mỗi hàng 2 button
+  for (var i = 0; i < allocations.length; i += 2) {
+    var row = [];
+    row.push({
+      text: allocations[i],
+      callback_data: 'edit_allocation_' + allocations[i]
+    });
+    
+    if (i + 1 < allocations.length) {
+      row.push({
+        text: allocations[i + 1],
+        callback_data: 'edit_allocation_' + allocations[i + 1]
+      });
+    }
+    
+    keyboard.push(row);
+  }
+  
+  return {
+    "inline_keyboard": keyboard
+  };
+}
+
+// Global createSubCategoryKeyboard function
+function createSubCategoryKeyboard(allocation, isEdit) {
+  if (!subCategories[allocation]) return null;
+  
+  var keyboard = [];
+  var subs = subCategories[allocation];
+  var prefix = isEdit ? 'edit_subcategory_' : 'subcategory_';
+  
+  // Tạo hàng keyboard, mỗi hàng 2 button
+  for (var i = 0; i < subs.length; i += 2) {
+    var row = [];
+    row.push({
+      text: subs[i],
+      callback_data: prefix + allocation + '_' + subs[i]
+    });
+    
+    if (i + 1 < subs.length) {
+      row.push({
+        text: subs[i + 1],
+        callback_data: prefix + allocation + '_' + subs[i + 1]
+      });
+    }
+    
+    keyboard.push(row);
+  }
+  
+  return {
+    "inline_keyboard": keyboard
+  };
+}
+
 function addTransactionData(userId, date, description, amount, allocation, type, subCategory) {
   var sheet = getSheet(userId); 
   subCategory = subCategory || ""; // Mặc định rỗng nếu không có
@@ -114,11 +192,18 @@ function doPost(e) {
   var chatId;
   var userName;
 
+  // DEBUG: Log toàn bộ request
+  Logger.log("=== DOPOST DEBUG ===");
+  Logger.log("Request contents: " + JSON.stringify(contents));
   
   if (contents.callback_query) {
     chatId = contents.callback_query.from.id;
     userName = contents.callback_query.from.first_name;
     var data = contents.callback_query.data;
+    
+    Logger.log("CALLBACK QUERY DETECTED:");
+    Logger.log("Chat ID: " + chatId);
+    Logger.log("Callback data: " + data);
 
     if (data === 'connect_email') {
       sendText(chatId, "Vui lòng nhập email của bạn:");
@@ -134,7 +219,7 @@ function doPost(e) {
       var allocation = parts[1];
       var subCategory = parts.slice(2).join('_');
       
-      // Lấy thông tin giao dịch tạm từ cache (sẽ implement sau)
+      // Lấy thông tin giao dịch tạm từ cache
       var tempTransaction = getTempTransaction(chatId);
       if (tempTransaction) {
         // Lưu giao dịch với subcategory
@@ -148,18 +233,140 @@ function doPost(e) {
           subCategory
         );
         
-        // Xóa cache
+        // Lưu thông tin giao dịch vừa tạo để có thể chỉnh sửa
+        var transactionInfo = {
+          userId: chatId,
+          date: tempTransaction.date,
+          description: tempTransaction.description,
+          amount: tempTransaction.amount,
+          allocation: allocation,
+          type: tempTransaction.type,
+          subCategory: subCategory,
+          rowIndex: getLastRowIndex(chatId) // Lấy index của row vừa thêm
+        };
+        saveTransactionForEdit(chatId, transactionInfo);
+        
+        // Xóa cache tạm
         clearTempTransaction(chatId);
         
-        // Thông báo thành công
+        // Thông báo thành công với keyboard chỉnh sửa
         var typeText = tempTransaction.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var editKeyboard = {
+          "inline_keyboard": [
+            [
+              {
+                text: '✏️ Chỉnh sửa',
+                callback_data: 'edit_transaction'
+              }
+            ]
+          ]
+        };
+        
         sendText(chatId, 
-          "Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+          "✅ Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
           " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
-          " vào hũ " + allocation + " với nhãn " + subCategory
+          " vào hũ " + allocation + " với nhãn " + subCategory,
+          editKeyboard
         );
       }
       return;
+    } else if (data === 'edit_transaction') {
+      // Xử lý chỉnh sửa giao dịch
+      Logger.log("DEBUG: edit_transaction callback received for user: " + chatId);
+      var transactionInfo = getTransactionForEdit(chatId);
+      Logger.log("DEBUG: transactionInfo from cache: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Hiển thị keyboard chọn hũ mới
+        var allocationKeyboard = createAllocationKeyboard();
+        Logger.log("DEBUG: Allocation keyboard created with " + allocationKeyboard.inline_keyboard.length + " rows");
+        
+        // Debug keyboard content
+        for (var i = 0; i < allocationKeyboard.inline_keyboard.length; i++) {
+          var row = allocationKeyboard.inline_keyboard[i];
+          Logger.log("Keyboard row " + (i+1) + ": " + JSON.stringify(row));
+        }
+        
+        sendText(chatId, 
+          "🔄 Chỉnh sửa giao dịch: " + transactionInfo.description + 
+          " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          "\n\nVui lòng chọn hũ mới:",
+          allocationKeyboard
+        );
+        Logger.log("DEBUG: Edit message sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found in cache");
+        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+      }
+      return;
+    } else if (data.startsWith('edit_allocation_')) {
+      // Xử lý chọn hũ mới khi chỉnh sửa
+      Logger.log("DEBUG: edit_allocation callback: " + data);
+      var allocation = data.replace('edit_allocation_', '');
+      var transactionInfo = getTransactionForEdit(chatId);
+      Logger.log("DEBUG: Retrieved transaction for edit: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Cập nhật allocation
+        transactionInfo.allocation = allocation;
+        saveTransactionForEdit(chatId, transactionInfo);
+        Logger.log("DEBUG: Updated allocation to: " + allocation);
+        
+        // Hiển thị keyboard chọn nhãn con cho edit
+        var keyboard = createSubCategoryKeyboard(allocation, true);
+        sendText(chatId, 
+          "Đã chọn hũ: " + allocation + 
+          "\nVui lòng chọn nhãn cụ thể:",
+          keyboard
+        );
+        Logger.log("DEBUG: Subcategory keyboard sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found for edit_allocation");
+        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+      }
+      return;
+    } else if (data.startsWith('edit_subcategory_')) {
+      // Xử lý chọn nhãn con mới khi chỉnh sửa
+      Logger.log("DEBUG: edit_subcategory callback: " + data);
+      var parts = data.split('_');
+      var allocation = parts[2];
+      var subCategory = parts.slice(3).join('_');
+      Logger.log("DEBUG: Parsed allocation: " + allocation + ", subCategory: " + subCategory);
+      
+      var transactionInfo = getTransactionForEdit(chatId);
+      Logger.log("DEBUG: Retrieved transaction: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Cập nhật subcategory
+        transactionInfo.allocation = allocation;
+        transactionInfo.subCategory = subCategory;
+        Logger.log("DEBUG: Updated transaction info: " + JSON.stringify(transactionInfo));
+        
+        // Cập nhật giao dịch trong sheet
+        updateTransactionInSheet(transactionInfo);
+        Logger.log("DEBUG: Updated transaction in sheet");
+        
+        // Xóa cache
+        clearTransactionForEdit(chatId);
+        Logger.log("DEBUG: Cleared edit cache");
+        
+        // Thông báo thành công
+        var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        sendText(chatId, 
+          "✅ Đã cập nhật " + typeText + ": " + transactionInfo.description + 
+          " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          " vào hũ " + allocation + " với nhãn " + subCategory
+        );
+        Logger.log("DEBUG: Success message sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found for edit_subcategory");
+        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+      }
+      return;
+    } else {
+      // Log unhandled callback
+      Logger.log("DEBUG: Unhandled callback in first block: " + data);
+      Logger.log("Available handlers: connect_email, bank_, subcategory_, edit_transaction, edit_allocation_, edit_subcategory_");
     }
   } else if (contents.message) {
     chatId = contents.message.chat.id;
@@ -180,54 +387,7 @@ function doPost(e) {
     }
   }
 
-  var allocations = [
-    'Chi tiêu thiết yếu',
-    'Hưởng thụ',
-    'Tiết kiệm dài hạn',
-    'Giáo dục',
-    'Tự do tài chính',
-    'Cho đi'
-  ];
-
-  // Cấu trúc nhãn con cho từng hũ
-  var subCategories = {
-    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
-    'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
-    'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
-    'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
-    'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
-    'Cho đi': ['Từ thiện', 'Giúp đỡ người thân', 'Quà tặng', 'Đóng góp cho cộng đồng']
-  };
-
-  // Tạo keyboard cho việc chọn nhãn con
-  function createSubCategoryKeyboard(allocation) {
-    if (!subCategories[allocation]) return null;
-    
-    var keyboard = [];
-    var subs = subCategories[allocation];
-    
-    // Tạo hàng keyboard, mỗi hàng 2 button
-    for (var i = 0; i < subs.length; i += 2) {
-      var row = [];
-      row.push({
-        text: subs[i],
-        callback_data: 'subcategory_' + allocation + '_' + subs[i]
-      });
-      
-      if (i + 1 < subs.length) {
-        row.push({
-          text: subs[i + 1],
-          callback_data: 'subcategory_' + allocation + '_' + subs[i + 1]
-        });
-      }
-      
-      keyboard.push(row);
-    }
-    
-    return {
-      "inline_keyboard": keyboard
-    };
-  }
+  // (Allocations và functions đã di chuyển thành global)
 
   // Quản lý cache giao dịch tạm
   function saveTempTransaction(userId, transactionData) {
@@ -246,9 +406,17 @@ function doPost(e) {
     cache.remove('temp_transaction_' + userId);
   }
 
+  // (Cache functions moved to global scope for reusability)
+
+    // (updateTransactionInSheet function moved to global scope)
+
   if (contents.callback_query) {
     var id_callback = chatId;
     var data = contents.callback_query.data;
+    
+    Logger.log("SECOND CALLBACK BLOCK:");
+    Logger.log("Chat ID: " + id_callback);
+    Logger.log("Callback data: " + data);
 
     if (data === 'totalchi') {
       var userId = chatId;
@@ -267,6 +435,8 @@ function doPost(e) {
     } else if (data === 'history') {
       var userId = chatId;
       sendTransactionHistory(id_callback, userId);
+    } else {
+      Logger.log("DEBUG: Unhandled callback in second block: " + data);
     }
   } else if (contents.message) {
     var id_message = chatId;
@@ -405,7 +575,7 @@ function doPost(e) {
           });
           
           // Hiển thị keyboard chọn nhãn con
-          var keyboard = createSubCategoryKeyboard(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false);
           sendText(
             id_message,
             "Thu nhập: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
@@ -480,7 +650,7 @@ function doPost(e) {
           });
           
           // Hiển thị keyboard chọn nhãn con
-          var keyboard = createSubCategoryKeyboard(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false);
           sendText(
             id_message,
             "Chi tiêu: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
@@ -771,14 +941,7 @@ function getCurrentBalance(userId) {
 
 
 function getTotalAllocationBalances(userId) {
-  var allocations = [
-    'Chi tiêu thiết yếu',
-    'Hưởng thụ',
-    'Tiết kiệm dài hạn',
-    'Giáo dục',
-    'Tự do tài chính',
-    'Cho đi'
-  ];
+  // (Using global allocations array)
   var balances = {};
   for (var i = 0; i < allocations.length; i++) {
     balances[allocations[i]] = 0;
@@ -939,14 +1102,7 @@ function testCreateFileInFolder() {
 function testSubCategoryKeyboard() {
   Logger.log("=== TEST SUBCATEGORY KEYBOARD ===");
   
-  var allocations = [
-    'Chi tiêu thiết yếu',
-    'Hưởng thụ',
-    'Tiết kiệm dài hạn',
-    'Giáo dục',
-    'Tự do tài chính',
-    'Cho đi'
-  ];
+  // (Using global allocations array)
 
   var subCategories = {
     'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
@@ -957,23 +1113,24 @@ function testSubCategoryKeyboard() {
     'Cho đi': ['Từ thiện', 'Giúp đỡ người thân', 'Quà tặng', 'Đóng góp cho cộng đồng']
   };
   
-  function createSubCategoryKeyboard(allocation) {
+  function createSubCategoryKeyboard(allocation, isEdit) {
     if (!subCategories[allocation]) return null;
     
     var keyboard = [];
     var subs = subCategories[allocation];
+    var prefix = isEdit ? 'edit_subcategory_' : 'subcategory_';
     
     for (var i = 0; i < subs.length; i += 2) {
       var row = [];
       row.push({
         text: subs[i],
-        callback_data: 'subcategory_' + allocation + '_' + subs[i]
+        callback_data: prefix + allocation + '_' + subs[i]
       });
       
       if (i + 1 < subs.length) {
         row.push({
           text: subs[i + 1],
-          callback_data: 'subcategory_' + allocation + '_' + subs[i + 1]
+          callback_data: prefix + allocation + '_' + subs[i + 1]
         });
       }
       
@@ -989,7 +1146,7 @@ function testSubCategoryKeyboard() {
   for (var i = 0; i < allocations.length; i++) {
     var allocation = allocations[i];
     Logger.log("Testing keyboard for: " + allocation);
-    var keyboard = createSubCategoryKeyboard(allocation);
+    var keyboard = createSubCategoryKeyboard(allocation, false);
     if (keyboard) {
       Logger.log("Keyboard created with " + keyboard.inline_keyboard.length + " rows");
       for (var j = 0; j < keyboard.inline_keyboard.length; j++) {
@@ -1001,6 +1158,248 @@ function testSubCategoryKeyboard() {
   }
   
   Logger.log("TEST SUBCATEGORY KEYBOARD COMPLETED");
+}
+
+// Quản lý cache cho chỉnh sửa giao dịch (Global functions)
+function saveTransactionForEdit(userId, transactionInfo) {
+  var cache = CacheService.getScriptCache();
+  cache.put('edit_transaction_' + userId, JSON.stringify(transactionInfo), 1800); // 30 phút
+}
+
+function getTransactionForEdit(userId) {
+  var cache = CacheService.getScriptCache();
+  var data = cache.get('edit_transaction_' + userId);
+  return data ? JSON.parse(data) : null;
+}
+
+function clearTransactionForEdit(userId) {
+  var cache = CacheService.getScriptCache();
+  cache.remove('edit_transaction_' + userId);
+}
+
+function getLastRowIndex(userId) {
+  var sheet = getSheet(userId);
+  return sheet.getLastRow();
+}
+
+// Cập nhật giao dịch trong sheet
+function updateTransactionInSheet(transactionInfo) {
+  var sheet = getSheet(transactionInfo.userId);
+  var rowIndex = transactionInfo.rowIndex;
+  
+  // Cập nhật dữ liệu trong hàng
+  sheet.getRange(rowIndex, 1, 1, 6).setValues([[
+    transactionInfo.date,
+    transactionInfo.description,
+    transactionInfo.amount,
+    transactionInfo.allocation,
+    transactionInfo.type,
+    transactionInfo.subCategory
+  ]]);
+}
+
+// Hàm debug callback để kiểm tra
+function debugCallback(callbackData, userId) {
+  Logger.log("=== DEBUG CALLBACK ===");
+  Logger.log("Callback data: " + callbackData);
+  Logger.log("User ID: " + userId);
+  
+  if (callbackData === 'edit_transaction') {
+    var transactionInfo = getTransactionForEdit(userId);
+    Logger.log("Transaction info from cache: " + JSON.stringify(transactionInfo));
+    if (!transactionInfo) {
+      Logger.log("ERROR: No transaction info found in cache!");
+    }
+  } else if (callbackData.startsWith('edit_allocation_')) {
+    var allocation = callbackData.replace('edit_allocation_', '');
+    Logger.log("Selected allocation: " + allocation);
+    var transactionInfo = getTransactionForEdit(userId);
+    Logger.log("Transaction info: " + JSON.stringify(transactionInfo));
+  } else if (callbackData.startsWith('edit_subcategory_')) {
+    var parts = callbackData.split('_');
+    var allocation = parts[2];
+    var subCategory = parts.slice(3).join('_');
+    Logger.log("Selected allocation: " + allocation + ", subCategory: " + subCategory);
+  }
+  
+  Logger.log("=== END DEBUG ===");
+}
+
+// Hàm test tính năng chỉnh sửa giao dịch
+function testEditTransactionFlow() {
+  Logger.log("=== TEST EDIT TRANSACTION FLOW ===");
+  
+  // (Using global allocations array)
+
+  // Test allocation keyboard
+  Logger.log("Testing allocation keyboard:");
+  // (Using global createAllocationKeyboard function)
+  
+  var allocationKeyboard = createAllocationKeyboard();
+  Logger.log("Allocation keyboard created with " + allocationKeyboard.inline_keyboard.length + " rows");
+  
+  // Test edit subcategory keyboard
+  Logger.log("Testing edit subcategory keyboards:");
+  var subCategories = {
+    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+    'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao']
+  };
+  
+  function createSubCategoryKeyboard(allocation, isEdit) {
+    if (!subCategories[allocation]) return null;
+    var keyboard = [];
+    var subs = subCategories[allocation];
+    var prefix = isEdit ? 'edit_subcategory_' : 'subcategory_';
+    for (var i = 0; i < subs.length; i += 2) {
+      var row = [];
+      row.push({
+        text: subs[i],
+        callback_data: prefix + allocation + '_' + subs[i]
+      });
+      if (i + 1 < subs.length) {
+        row.push({
+          text: subs[i + 1],
+          callback_data: prefix + allocation + '_' + subs[i + 1]
+        });
+      }
+      keyboard.push(row);
+    }
+    return {
+      "inline_keyboard": keyboard
+    };
+  }
+  
+  var editKeyboard = createSubCategoryKeyboard('Chi tiêu thiết yếu', true);
+  Logger.log("Edit keyboard for 'Chi tiêu thiết yếu':");
+  for (var i = 0; i < editKeyboard.inline_keyboard.length; i++) {
+    var row = editKeyboard.inline_keyboard[i];
+    Logger.log("Row " + (i+1) + ": " + row.map(function(btn) { return btn.text + " (" + btn.callback_data + ")"; }).join(", "));
+  }
+  
+  Logger.log("TEST EDIT TRANSACTION FLOW COMPLETED");
+}
+
+// Hàm test cache đơn giản  
+function testEditCache() {
+  Logger.log("=== SIMPLE CACHE TEST ===");
+  
+  var userId = "TEST_123";
+  var testData = {
+    userId: userId,
+    description: "Test transaction",
+    amount: 25000,
+    allocation: "Chi tiêu thiết yếu",
+    type: "ChiTieu",
+    subCategory: "Ăn ngoài",
+    rowIndex: 2
+  };
+  
+  Logger.log("1. Saving transaction...");
+  try {
+    saveTransactionForEdit(userId, testData);
+    Logger.log("✅ Save successful");
+  } catch (error) {
+    Logger.log("❌ Save failed: " + error.toString());
+    return;
+  }
+  
+  Logger.log("2. Retrieving transaction...");
+  try {
+    var retrieved = getTransactionForEdit(userId);
+    Logger.log("Retrieved: " + JSON.stringify(retrieved));
+    
+    if (retrieved && retrieved.description === testData.description) {
+      Logger.log("✅ Retrieve successful");
+    } else {
+      Logger.log("❌ Retrieve failed - data mismatch");
+    }
+  } catch (error) {
+    Logger.log("❌ Retrieve failed: " + error.toString());
+    return;
+  }
+  
+  Logger.log("3. Clearing cache...");
+  try {
+    clearTransactionForEdit(userId);
+    var afterClear = getTransactionForEdit(userId);
+    if (!afterClear) {
+      Logger.log("✅ Clear successful");
+    } else {
+      Logger.log("❌ Clear failed - data still exists");
+    }
+  } catch (error) {
+    Logger.log("❌ Clear failed: " + error.toString());
+  }
+  
+  Logger.log("=== CACHE TEST COMPLETED ===");
+}
+
+// Hàm test keyboard creation
+function testKeyboardCreation() {
+  Logger.log("=== TEST KEYBOARD CREATION ===");
+  
+  // (Using global allocations array)
+
+  // (Using global createAllocationKeyboard function)
+  
+  var keyboard = createAllocationKeyboard();
+  Logger.log("Allocation keyboard created:");
+  Logger.log(JSON.stringify(keyboard, null, 2));
+  
+  Logger.log("TEST KEYBOARD CREATION COMPLETED");
+}
+
+// Hàm test simulate nhấn nút chỉnh sửa
+function testEditButton() {
+  Logger.log("=== TEST EDIT BUTTON ===");
+  
+  var testUserId = "TEST_EDIT_123";
+  
+  // 1. Tạo mock transaction data trong cache trước
+  var mockTransaction = {
+    userId: testUserId,
+    date: new Date(),
+    description: "Cà phê sáng",
+    amount: 25000,
+    allocation: "Chi tiêu thiết yếu",
+    type: "ChiTieu", 
+    subCategory: "Ăn ngoài",
+    rowIndex: 3
+  };
+  
+  Logger.log("1. Saving mock transaction to cache...");
+  saveTransactionForEdit(testUserId, mockTransaction);
+  
+  // 2. Simulate callback edit_transaction  
+  Logger.log("2. Simulating edit_transaction callback...");
+  
+  // Tạo mock request như Telegram gửi
+  var mockRequest = {
+    callback_query: {
+      from: {
+        id: testUserId,
+        first_name: "TestUser"
+      },
+      data: "edit_transaction"
+    }
+  };
+  
+  // Simulate doPost với mock request
+  var e = {
+    postData: {
+      contents: JSON.stringify(mockRequest)
+    }
+  };
+  
+  Logger.log("3. Calling doPost with mock request...");
+  try {
+    doPost(e);
+    Logger.log("✅ doPost executed successfully");
+  } catch (error) {
+    Logger.log("❌ doPost failed: " + error.toString());
+  }
+  
+  Logger.log("=== TEST EDIT BUTTON COMPLETED ===");
 }
 
 function getSheet(userId) {
