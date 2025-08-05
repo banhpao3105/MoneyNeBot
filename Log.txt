@@ -1,109 +1,48 @@
-13:43:54	Chú ý	Đã bắt đầu quá trình thực thi
-13:44:31	Thông tin	=== TEST NEW TRANSACTION BACK FLOW ===
-13:44:31	Thông tin	1. Simulate input: 'ăn trưa - 30000'
-13:44:31	Thông tin	2. Testing saveTempTransaction
-13:44:31	Thông tin	  ❌ Error in new transaction back flow test: ReferenceError: saveTempTransaction is not defined
-13:44:31	Thông tin	=== TEST NEW TRANSACTION BACK FLOW COMPLETED ===
-13:43:55	Chú ý	Đã hoàn tất quá trình thực thi
-
-13:44:10	Chú ý	Đã bắt đầu quá trình thực thi
-13:44:47	Thông tin	=== TEST SHORT CALLBACK FORMAT ===
-13:44:47	Thông tin	Testing new short format with transactionId: tx_1754376287587
-13:44:47	Thông tin	Testing allocation 0: Chi tiêu thiết yếu
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_0
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_0
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_0_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Chi tiêu thiết yếu
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Chi tiêu thiết yếu
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Chi tiêu thiết yếu
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Nhà ở
-13:44:47	Thông tin	  ✅ Chi tiêu thiết yếu - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	Testing allocation 1: Hưởng thụ
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_1
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_1
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_1_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Hưởng thụ
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Hưởng thụ
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Hưởng thụ
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Giải trí
-13:44:47	Thông tin	  ✅ Hưởng thụ - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	Testing allocation 2: Tiết kiệm dài hạn
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_2
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_2
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_2_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Tiết kiệm dài hạn
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Tiết kiệm dài hạn
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Tiết kiệm dài hạn
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Mua sắm những món đồ giá trị
-13:44:47	Thông tin	  ✅ Tiết kiệm dài hạn - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	Testing allocation 3: Giáo dục
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_3
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_3
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_3_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Giáo dục
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Giáo dục
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Giáo dục
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Sách
-13:44:47	Thông tin	  ✅ Giáo dục - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	Testing allocation 4: Tự do tài chính
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_4
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_4
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_4_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Tự do tài chính
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Tự do tài chính
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Tự do tài chính
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Đầu tư
-13:44:47	Thông tin	  ✅ Tự do tài chính - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	Testing allocation 5: Cho đi
-13:44:47	Thông tin	  Edit allocation callback: edit_alloc_tx_1754376287587_5
-13:44:47	Thông tin	  Edit allocation callback length: 29 chars
-13:44:47	Thông tin	  Edit allocation callback bytes: 29 bytes
-13:44:47	Thông tin	  New allocation callback: allocation_5
-13:44:47	Thông tin	  New allocation callback length: 12 chars
-13:44:47	Thông tin	  New allocation callback bytes: 12 bytes
-13:44:47	Thông tin	  Subcategory callback: edit_sub_tx_1754376287587_5_0
-13:44:47	Thông tin	  Subcategory callback length: 29 chars
-13:44:47	Thông tin	  Subcategory callback bytes: 29 bytes
-13:44:47	Thông tin	  ✅ Edit allocation parsing OK: Cho đi
-13:44:47	Thông tin	  ✅ New allocation parsing OK: Cho đi
-13:44:47	Thông tin	  ✅ Subcategory allocation parsing OK: Cho đi
-13:44:47	Thông tin	  ✅ Subcategory parsing OK: Từ thiện
-13:44:47	Thông tin	  ✅ Cho đi - ALL CALLBACKS WITHIN LIMIT
-13:44:47	Thông tin	
-13:44:47	Thông tin	=== TEST SHORT CALLBACK FORMAT COMPLETED ===
-13:44:10	Chú ý	Đã hoàn tất quá trình thực thi
+15:31:08	Chú ý	Đã bắt đầu quá trình thực thi
+15:31:46	Thông tin	=== TEST MULTIPLE TRANSACTION EDIT SCENARIO ===
+15:31:46	Thông tin	User reported bug: c-7 → edit → cancel → d-9 → edit c-7 again → Error
+15:31:46	Thông tin	
+15:31:46	Thông tin	📝 STEP 1: User nhập 'c - 7'
+15:31:46	Thông tin	CACHE SAVE: Key=edit_transaction_tx_c7_1754382706502, TransactionInfo={"userId":555666777,"transactionId":"tx_c7_1754382706502","date":"2025-08-05","description":"c","amount":7000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":10}
+15:31:46	Thông tin	✅ Transaction c-7 created with edit button
+15:31:46	Thông tin	
+15:31:46	Thông tin	📝 STEP 2: User nhấn [Edit] transaction c-7
+15:31:46	Thông tin	CACHE GET: Key=edit_transaction_tx_c7_1754382706502, Found=YES
+15:31:46	Thông tin	CACHE GET: Data={"userId":555666777,"transactionId":"tx_c7_1754382706502","date":"2025-08-05","description":"c","amount":7000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":10}
+15:31:46	Thông tin	✅ Edit info found for c-7: {"userId":555666777,"transactionId":"tx_c7_1754382706502","date":"2025-08-05","description":"c","amount":7000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":10}
+15:31:46	Thông tin	
+15:31:46	Thông tin	📝 STEP 3: User nhấn [❌ Hủy chỉnh sửa]
+15:31:46	Thông tin	→ Bot restores message xác nhận + keeps cache
+15:31:46	Thông tin	CACHE GET: Key=edit_transaction_tx_c7_1754382706502, Found=YES
+15:31:46	Thông tin	CACHE GET: Data={"userId":555666777,"transactionId":"tx_c7_1754382706502","date":"2025-08-05","description":"c","amount":7000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":10}
+15:31:46	Thông tin	✅ Cache preserved after cancel - c-7 can be edited again
+15:31:46	Thông tin	
+15:31:46	Thông tin	📝 STEP 4: User nhập 'd - 9' (transaction mới)
+15:31:46	Thông tin	CACHE SAVE: Key=edit_transaction_tx_d9_1754382707503, TransactionInfo={"userId":555666777,"transactionId":"tx_d9_1754382707503","date":"2025-08-05","description":"d","amount":9000,"allocation":"Hưởng thụ","type":"ChiTieu","subCategory":"Giải trí","rowIndex":11}
+15:31:46	Thông tin	✅ Transaction d-9 created
+15:31:46	Thông tin	
+15:31:46	Thông tin	📝 STEP 5: User quay lại nhấn [Edit] transaction c-7 cũ
+15:31:46	Thông tin	→ This is where the bug happened before
+15:31:46	Thông tin	CACHE GET: Key=edit_transaction_tx_c7_1754382706502, Found=YES
+15:31:46	Thông tin	CACHE GET: Data={"userId":555666777,"transactionId":"tx_c7_1754382706502","date":"2025-08-05","description":"c","amount":7000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":10}
+15:31:46	Thông tin	✅ SUCCESS! Transaction c-7 can still be edited:
+15:31:46	Thông tin	  Description: c
+15:31:46	Thông tin	  Amount: 7000
+15:31:46	Thông tin	  Allocation: Chi tiêu thiết yếu
+15:31:46	Thông tin	  SubCategory: Ăn ngoài
+15:31:46	Thông tin	  Edit button: ✏️ Chỉnh sửa → edit_transaction_tx_c7_1754382706502
+15:31:46	Thông tin	
+15:31:46	Thông tin	🎉 BUG FIXED! User can edit old transactions anytime
+15:31:46	Thông tin	❌ Before fix: 'Không tìm thấy thông tin giao dịch để chỉnh sửa'
+15:31:46	Thông tin	✅ After fix: Transaction info preserved, can edit multiple times
+15:31:46	Thông tin	
+15:31:46	Thông tin	📊 SUMMARY:
+15:31:46	Thông tin	  Transaction c-7 editable: YES
+15:31:46	Thông tin	CACHE GET: Key=edit_transaction_tx_d9_1754382707503, Found=YES
+15:31:46	Thông tin	CACHE GET: Data={"userId":555666777,"transactionId":"tx_d9_1754382707503","date":"2025-08-05","description":"d","amount":9000,"allocation":"Hưởng thụ","type":"ChiTieu","subCategory":"Giải trí","rowIndex":11}
+15:31:46	Thông tin	  Transaction d-9 editable: YES
+15:31:46	Thông tin	  Multiple edit support: WORKING
+15:31:46	Thông tin	CACHE CLEAR: Key=edit_transaction_tx_c7_1754382706502
+15:31:46	Thông tin	CACHE CLEAR: Key=edit_transaction_tx_d9_1754382707503
+15:31:47	Thông tin	=== TEST MULTIPLE TRANSACTION EDIT SCENARIO COMPLETED ===
+15:31:10	Chú ý	Đã hoàn tất quá trình thực thi

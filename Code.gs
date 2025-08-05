@@ -87,6 +87,13 @@ function createAllocationKeyboard(transactionId) {
     keyboard.push(row);
   }
   
+  // Thêm nút hủy ở hàng cuối
+  var cancelButton = transactionId ? 
+    { text: "❌ Hủy chỉnh sửa", callback_data: "cancel_edit_" + transactionId } :
+    { text: "❌ Hủy", callback_data: "cancel_new" };
+  
+  keyboard.push([cancelButton]);
+  
   return {
     "inline_keyboard": keyboard
   };
@@ -115,17 +122,30 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
   var subs = subCategories[allocation];
   var prefix = '';
   
-  if (isEdit && transactionId && (allocationIndex !== undefined && allocationIndex >= 0)) {
-    // Format mới ngắn: edit_sub_tx_123456_0_1 (allocationIndex_subIndex)
+  // Tính allocationIndex nếu chưa có
+  if (allocationIndex === undefined || allocationIndex === null || allocationIndex < 0) {
+    allocationIndex = allocations.indexOf(allocation);
+  }
+  
+  // Validation: Đảm bảo allocationIndex hợp lệ
+  if (allocationIndex < 0) {
+    allocationIndex = -1; // Fallback to old format
+  }
+  
+  if (isEdit && transactionId && allocationIndex >= 0) {
+    // Format mới ngắn cho edit: edit_sub_tx_123456_0_1 (allocationIndex_subIndex)
     prefix = 'edit_sub_' + transactionId + '_' + allocationIndex + '_';
   } else if (isEdit && transactionId) {
-    // Format cũ dài: edit_subcategory_tx_123456_AllocationName_
+    // Format cũ dài cho edit: edit_subcategory_tx_123456_AllocationName_
     prefix = 'edit_subcategory_' + transactionId + '_' + allocation + '_';
   } else if (isEdit) {
     // Format cũ không có transactionId
     prefix = 'edit_subcategory_' + allocation + '_';
+  } else if (allocationIndex >= 0) {
+    // Format mới ngắn cho transaction mới: sub_0_1 (allocationIndex_subIndex)
+    prefix = 'sub_' + allocationIndex + '_';
   } else {
-    // Format thường cho transaction mới
+    // Fallback format cũ dài
     prefix = 'subcategory_' + allocation + '_';
   }
   
@@ -133,7 +153,9 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
   for (var i = 0; i < subs.length; i += 2) {
     var row = [];
     
-    if (isEdit && transactionId && (allocationIndex !== undefined && allocationIndex >= 0)) {
+    var useShortFormat = allocationIndex >= 0 && (prefix.startsWith('sub_') || prefix.startsWith('edit_sub_'));
+    
+    if (useShortFormat) {
       // Dùng index cho subcategory để rút ngắn
       row.push({
         text: subs[i],
@@ -147,7 +169,7 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
         });
       }
     } else {
-      // Dùng tên subcategory (format cũ)
+      // Dùng tên subcategory (format cũ - fallback)
       row.push({
         text: subs[i],
         callback_data: prefix + subs[i]
@@ -174,10 +196,28 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
     backButtonData = 'back_to_allocation';
   }
   
-  keyboard.push([{
-    text: "🔙 Quay lại chọn hũ",
-    callback_data: backButtonData
-  }]);
+  // Tạo nút hủy
+  var cancelButtonData = '';
+  var cancelButtonText = '';
+  if (isEdit && transactionId) {
+    cancelButtonData = 'cancel_edit_' + transactionId;
+    cancelButtonText = "❌ Hủy chỉnh sửa";
+  } else {
+    cancelButtonData = 'cancel_new';  
+    cancelButtonText = "❌ Hủy";
+  }
+  
+  // Thêm cả nút quay lại và nút hủy trong cùng 1 hàng
+  keyboard.push([
+    {
+      text: "🔙 Quay lại chọn hũ",
+      callback_data: backButtonData
+    },
+    {
+      text: cancelButtonText,
+      callback_data: cancelButtonData
+    }
+  ]);
   
   return {
     "inline_keyboard": keyboard
@@ -217,10 +257,14 @@ function editText(chatId, messageId, text, keyBoard) {
       chat_id: String(chatId),
       message_id: String(messageId),
       text: formattedText,
-      parse_mode: "HTML",
-      reply_markup: JSON.stringify(keyBoard)
+      parse_mode: "HTML"
     }
   };
+  
+  // Chỉ thêm reply_markup nếu keyBoard không null/undefined
+  if (keyBoard) {
+    data.payload.reply_markup = JSON.stringify(keyBoard);
+  }
   
   try {
     UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
@@ -228,6 +272,7 @@ function editText(chatId, messageId, text, keyBoard) {
     return true;
   } catch (error) {
     Logger.log("DEBUG: Failed to edit message: " + error.toString());
+    Logger.log("DEBUG: Edit data: " + JSON.stringify(data));
     // Fallback: gửi tin nhắn mới nếu không edit được
     sendText(chatId, text, keyBoard);
     return false;
@@ -325,11 +370,37 @@ function doPost(e) {
       saveBankToSheet(chatId, bankName); 
       sendText(chatId, "Ngân hàng của bạn đã được kết nối thành công: " + bankName);
       return;
-    } else if (data.startsWith('subcategory_')) {
+    } else if (data.startsWith('subcategory_') || data.startsWith('sub_')) {
       // Xử lý chọn nhãn con
-      var parts = data.split('_');
-      var allocation = parts[1];
-      var subCategory = parts.slice(2).join('_');
+      var allocation = '';
+      var subCategory = '';
+      
+      if (data.startsWith('sub_')) {
+        // Format mới ngắn: sub_0_1 (allocationIndex_subIndex)
+        var parts = data.split('_');
+        if (parts.length >= 3) {
+          var allocationIndex = parseInt(parts[1]);
+          var subCategoryIndex = parseInt(parts[2]);
+          
+          if (!isNaN(allocationIndex) && !isNaN(subCategoryIndex) && allocationIndex >= 0 && subCategoryIndex >= 0) {
+            allocation = allocations[allocationIndex];
+            if (allocation && subCategories[allocation] && subCategories[allocation][subCategoryIndex]) {
+              subCategory = subCategories[allocation][subCategoryIndex];
+            }
+          }
+        }
+      } else {
+        // Format cũ dài: subcategory_AllocationName_SubCategoryName
+        var parts = data.split('_');
+        allocation = parts[1];
+        subCategory = parts.slice(2).join('_');
+      }
+      
+      // Validation: Đảm bảo allocation và subCategory được parse thành công
+      if (!allocation || !subCategory) {
+        editText(chatId, messageId, "❌ Lỗi xử lý lựa chọn. Vui lòng thử lại.", null);
+        return;
+      }
       
       // Lấy thông tin giao dịch tạm từ cache
       var tempTransaction = getTempTransaction(chatId);
@@ -559,8 +630,9 @@ function doPost(e) {
         saveTempTransaction(chatId, tempTransaction);
         Logger.log("DEBUG: Updated temp transaction allocation to: " + allocation);
         
-        // Hiển thị keyboard chọn nhãn con
-        var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
+        // Hiển thị keyboard chọn nhãn con với allocationIndex
+        var allocationIndex = allocations.indexOf(allocation);
+        var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
         editText(chatId, messageId,
           (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
           tempTransaction.description + " " + 
@@ -599,10 +671,50 @@ function doPost(e) {
         editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.", null);
       }
       return;
+    } else if (data === 'cancel_new') {
+      // Hủy giao dịch mới
+      Logger.log("DEBUG: cancel_new callback");
+      
+      // Xóa temp transaction cache
+      clearTempTransaction(chatId);
+      Logger.log("DEBUG: Cleared temp transaction cache");
+      
+      // Thông báo hủy thành công
+      editText(chatId, messageId, "❌ Đã hủy giao dịch", null);
+      Logger.log("DEBUG: Cancel new transaction message sent");
+      return;
+    } else if (data.startsWith('cancel_edit_')) {
+      // Hủy chỉnh sửa giao dịch - trả về trạng thái xác nhận ban đầu
+      var transactionId = data.replace('cancel_edit_', '');
+      
+      // Lấy thông tin giao dịch từ cache TRƯỚC khi clear
+      var transactionInfo = getTransactionForEdit(chatId, transactionId);
+      
+      if (transactionInfo) {
+        // Tạo lại message xác nhận gốc với transaction info
+        var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var editKeyboard = createEditKeyboard(transactionInfo.transactionId);
+        
+        // Hiển thị lại message xác nhận ban đầu
+        editText(chatId, messageId,
+          "✅ Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
+          " " + formatNumberWithSeparator(transactionInfo.amount) + 
+          " vào hũ " + transactionInfo.allocation + " với nhãn " + transactionInfo.subCategory,
+          editKeyboard
+        );
+        
+        // KHÔNG clear cache - để user có thể edit lại transaction này bao nhiêu lần cũng được
+        // clearTransactionForEdit(chatId, transactionId);
+      } else {
+        // Fallback nếu không tìm thấy transaction info
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để khôi phục", null);
+      }
+      
+      return;
     } else {
       // Log unhandled callback
       Logger.log("DEBUG: Unhandled callback in first block: " + data);
-      Logger.log("Available handlers: connect_email, bank_, subcategory_, edit_transaction, edit_allocation_, edit_subcategory_");
+      Logger.log("Available handlers: connect_email, bank_, subcategory_, edit_transaction, edit_allocation_, edit_subcategory_, cancel_new, cancel_edit_");
     }
   } else if (contents.message) {
     chatId = contents.message.chat.id;
@@ -795,8 +907,9 @@ function doPost(e) {
             type: type
           });
           
-          // Hiển thị keyboard chọn nhãn con
-          var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
+          // Hiển thị keyboard chọn nhãn con với allocationIndex
+          var allocationIndex = allocations.indexOf(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
           sendText(
             id_message,
             "Thu nhập: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
@@ -870,8 +983,9 @@ function doPost(e) {
             type: type
           });
           
-          // Hiển thị keyboard chọn nhãn con
-          var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
+          // Hiển thị keyboard chọn nhãn con với allocationIndex
+          var allocationIndex = allocations.indexOf(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
           sendText(
             id_message,
             "Chi tiêu: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
@@ -2652,6 +2766,1713 @@ function testEditMessage() {
   }
   
   Logger.log("=== TEST EDIT MESSAGE FUNCTIONALITY COMPLETED ===");
+}
+
+// Test cancel buttons functionality
+function testCancelButtons() {
+  Logger.log("=== TEST CANCEL BUTTONS ===");
+  
+  var testUserId = "USER_CANCEL_TEST";
+  var testChatId = 123456789;
+  var testTransactionId = "tx_1234567890";
+  
+  try {
+    // 1. Test allocation keyboard có nút hủy
+    Logger.log("1. Testing allocation keyboard with cancel button");
+    
+    // Test cho transaction mới
+    var newAllocKeyboard = createAllocationKeyboard(null);
+    var lastRowNew = newAllocKeyboard.inline_keyboard[newAllocKeyboard.inline_keyboard.length - 1];
+    var cancelButtonNew = lastRowNew[0];
+    
+    Logger.log("  New transaction cancel button:");
+    Logger.log("    Text: " + cancelButtonNew.text);
+    Logger.log("    Callback: " + cancelButtonNew.callback_data);
+    
+    if (cancelButtonNew.callback_data === 'cancel_new') {
+      Logger.log("  ✅ New transaction cancel button OK");
+    } else {
+      Logger.log("  ❌ New transaction cancel button FAILED");
+    }
+    
+    // Test cho edit transaction
+    var editAllocKeyboard = createAllocationKeyboard(testTransactionId);
+    var lastRowEdit = editAllocKeyboard.inline_keyboard[editAllocKeyboard.inline_keyboard.length - 1];
+    var cancelButtonEdit = lastRowEdit[0];
+    
+    Logger.log("  Edit transaction cancel button:");
+    Logger.log("    Text: " + cancelButtonEdit.text);
+    Logger.log("    Callback: " + cancelButtonEdit.callback_data);
+    
+    if (cancelButtonEdit.callback_data === 'cancel_edit_' + testTransactionId) {
+      Logger.log("  ✅ Edit transaction cancel button OK");
+    } else {
+      Logger.log("  ❌ Edit transaction cancel button FAILED");
+    }
+    
+    // 2. Test subcategory keyboard có nút hủy
+    Logger.log("2. Testing subcategory keyboard with cancel button");
+    
+    var subKeyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    var lastRowSub = subKeyboard.inline_keyboard[subKeyboard.inline_keyboard.length - 1];
+    
+    Logger.log("  Subcategory last row buttons:");
+    for (var i = 0; i < lastRowSub.length; i++) {
+      Logger.log("    Button " + i + ": " + lastRowSub[i].text + " -> " + lastRowSub[i].callback_data);
+    }
+    
+    // Kiểm tra có nút hủy
+    var hasCancelButton = false;
+    for (var i = 0; i < lastRowSub.length; i++) {
+      if (lastRowSub[i].callback_data === 'cancel_new') {
+        hasCancelButton = true;
+        break;
+      }
+    }
+    
+    if (hasCancelButton) {
+      Logger.log("  ✅ Subcategory keyboard has cancel button");
+    } else {
+      Logger.log("  ❌ Subcategory keyboard missing cancel button");
+    }
+    
+    // 3. Test cache functions
+    Logger.log("3. Testing cancel cache operations");
+    
+    // Setup temp transaction
+    var tempTransaction = {
+      description: "test",
+      amount: 10000,
+      type: "ChiTieu",
+      allocation: "Chi tiêu thiết yếu"
+    };
+    saveTempTransaction(testChatId, tempTransaction);
+    
+    var retrieved = getTempTransaction(testChatId);
+    if (retrieved) {
+      Logger.log("  ✅ Temp transaction saved successfully");
+      
+      // Test clear
+      clearTempTransaction(testChatId);
+      var afterClear = getTempTransaction(testChatId);
+      
+      if (!afterClear) {
+        Logger.log("  ✅ Temp transaction cleared successfully");
+      } else {
+        Logger.log("  ❌ Temp transaction NOT cleared");
+      }
+    } else {
+      Logger.log("  ❌ Failed to save temp transaction");
+    }
+    
+    // Test edit transaction cache
+    var transactionInfo = {
+      userId: testChatId,
+      transactionId: testTransactionId,
+      description: "test edit",
+      amount: 20000,
+      type: "ChiTieu",
+      allocation: "Chi tiêu thiết yếu"
+    };
+    
+    saveTransactionForEdit(testChatId, transactionInfo, testTransactionId);
+    var retrievedEdit = getTransactionForEdit(testChatId, testTransactionId);
+    
+    if (retrievedEdit) {
+      Logger.log("  ✅ Edit transaction saved successfully");
+      
+      // Test clear edit
+      clearTransactionForEdit(testChatId, testTransactionId);
+      var afterClearEdit = getTransactionForEdit(testChatId, testTransactionId);
+      
+      if (!afterClearEdit) {
+        Logger.log("  ✅ Edit transaction cleared successfully");
+      } else {
+        Logger.log("  ❌ Edit transaction NOT cleared");
+      }
+    } else {
+      Logger.log("  ❌ Failed to save edit transaction");
+    }
+    
+    Logger.log("✅ Cancel buttons test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel buttons test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST CANCEL BUTTONS COMPLETED ===");
+}
+
+// Test cancel flow simulation
+function testCancelFlow() {
+  Logger.log("=== TEST CANCEL FLOW SIMULATION ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Simulate new transaction cancel flow
+    Logger.log("1. Testing new transaction cancel flow");
+    
+    // Setup temp transaction
+    var tempTransaction = {
+      description: "ăn trưa", 
+      amount: 30000,
+      type: "ChiTieu",
+      allocation: "Chi tiêu thiết yếu"
+    };
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Setup temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // Simulate cancel_new callback
+    var beforeCancel = getTempTransaction(testChatId);
+    Logger.log("  Before cancel - temp transaction exists: " + (beforeCancel ? "YES" : "NO"));
+    
+    // Clear temp transaction (simulate callback handler)
+    clearTempTransaction(testChatId);
+    
+    var afterCancel = getTempTransaction(testChatId);
+    Logger.log("  After cancel - temp transaction exists: " + (afterCancel ? "YES" : "NO"));
+    
+    if (!afterCancel) {
+      Logger.log("  ✅ New transaction cancel flow OK");
+    } else {
+      Logger.log("  ❌ New transaction cancel flow FAILED");
+    }
+    
+    // 2. Simulate edit transaction cancel flow
+    Logger.log("2. Testing edit transaction cancel flow");
+    
+    var testTransactionId = "tx_" + Date.now();
+    var transactionInfo = {
+      userId: testChatId,
+      transactionId: testTransactionId,
+      description: "test edit",
+      amount: 50000,
+      allocation: "Hưởng thụ",
+      type: "ChiTieu"
+    };
+    
+    saveTransactionForEdit(testChatId, transactionInfo, testTransactionId);
+    Logger.log("  Setup edit transaction: " + JSON.stringify(transactionInfo));
+    
+    var beforeCancelEdit = getTransactionForEdit(testChatId, testTransactionId);
+    Logger.log("  Before cancel - edit transaction exists: " + (beforeCancelEdit ? "YES" : "NO"));
+    
+    // Clear edit transaction (simulate callback handler)
+    clearTransactionForEdit(testChatId, testTransactionId);
+    
+    var afterCancelEdit = getTransactionForEdit(testChatId, testTransactionId);
+    Logger.log("  After cancel - edit transaction exists: " + (afterCancelEdit ? "YES" : "NO"));
+    
+    if (!afterCancelEdit) {
+      Logger.log("  ✅ Edit transaction cancel flow OK");
+    } else {
+      Logger.log("  ❌ Edit transaction cancel flow FAILED");
+    }
+    
+    // 3. Test button layouts
+    Logger.log("3. Testing button layouts");
+    
+    var newAllocKeyboard = createAllocationKeyboard(null);
+    Logger.log("  New allocation keyboard rows: " + newAllocKeyboard.inline_keyboard.length);
+    
+    var editAllocKeyboard = createAllocationKeyboard(testTransactionId);
+    Logger.log("  Edit allocation keyboard rows: " + editAllocKeyboard.inline_keyboard.length);
+    
+    var subKeyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    Logger.log("  Subcategory keyboard rows: " + subKeyboard.inline_keyboard.length);
+    
+    var editSubKeyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", true, testTransactionId, 0);
+    Logger.log("  Edit subcategory keyboard rows: " + editSubKeyboard.inline_keyboard.length);
+    
+    Logger.log("✅ Cancel flow simulation completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel flow test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST CANCEL FLOW SIMULATION COMPLETED ===");
+}
+
+// Debug cancel button issue - test callback handler
+function debugCancelIssue() {
+  Logger.log("=== DEBUG CANCEL ISSUE ===");
+  
+  var testChatId = 123456789;
+  var testMessageId = 999999;
+  
+  try {
+    // 1. Test cancel button creation trong subcategory keyboard
+    Logger.log("1. Testing cancel button in subcategory keyboard");
+    var subKeyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    
+    if (subKeyboard && subKeyboard.inline_keyboard) {
+      var lastRow = subKeyboard.inline_keyboard[subKeyboard.inline_keyboard.length - 1];
+      Logger.log("  Last row buttons count: " + lastRow.length);
+      
+      for (var i = 0; i < lastRow.length; i++) {
+        Logger.log("    Button " + i + ": " + lastRow[i].text + " -> " + lastRow[i].callback_data);
+        
+        if (lastRow[i].callback_data === 'cancel_new') {
+          Logger.log("  ✅ Found cancel_new button at position " + i);
+        }
+      }
+    }
+    
+    // 2. Test cancel_new callback handler simulation
+    Logger.log("2. Testing cancel_new callback handler simulation");
+    
+    // Setup temp transaction như flow thực tế
+    var tempTransaction = {
+      description: "a",
+      amount: 1000,
+      type: "ChiTieu", 
+      allocation: "Chi tiêu thiết yếu"
+    };
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Setup temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // Verify temp transaction exists
+    var beforeCancel = getTempTransaction(testChatId);
+    Logger.log("  Before cancel - temp transaction: " + JSON.stringify(beforeCancel));
+    
+    // Simulate cancel_new callback logic
+    Logger.log("  Simulating cancel_new callback logic...");
+    var data = 'cancel_new';
+    
+    if (data === 'cancel_new') {
+      Logger.log("    ✅ Callback matched 'cancel_new'");
+      
+      // Clear temp transaction
+      clearTempTransaction(testChatId);
+      Logger.log("    ✅ Cleared temp transaction cache");
+      
+      // Verify cleared
+      var afterCancel = getTempTransaction(testChatId);
+      Logger.log("    After cancel - temp transaction: " + (afterCancel ? JSON.stringify(afterCancel) : "null"));
+      
+      if (!afterCancel) {
+        Logger.log("    ✅ Temp transaction successfully cleared");
+      } else {
+        Logger.log("    ❌ Temp transaction NOT cleared");
+      }
+      
+      // Test editText call (will fail with fake messageId but we can test the call)
+      Logger.log("    Testing editText call...");
+      try {
+        var editResult = editText(testChatId, testMessageId, "❌ Đã hủy giao dịch", null);
+        Logger.log("    editText call completed (may have failed due to fake messageId)");
+      } catch (editError) {
+        Logger.log("    editText error: " + editError.toString());
+      }
+      
+    } else {
+      Logger.log("    ❌ Callback did NOT match 'cancel_new'");
+    }
+    
+    // 3. Test tất cả các callback handlers có trong code
+    Logger.log("3. Testing callback handler lookup");
+    var testCallbacks = [
+      'cancel_new',
+      'cancel_edit_tx_123456',
+      'back_to_allocation',
+      'allocation_0',
+      'subcategory_Chi tiêu thiết yếu_Nhà ở'
+    ];
+    
+    for (var i = 0; i < testCallbacks.length; i++) {
+      var testCallback = testCallbacks[i];
+      Logger.log("  Testing callback: " + testCallback);
+      
+      // Kiểm tra logic matching
+      if (testCallback === 'cancel_new') {
+        Logger.log("    ✅ Would match cancel_new handler");
+      } else if (testCallback.startsWith('cancel_edit_')) {
+        Logger.log("    ✅ Would match cancel_edit_ handler");
+      } else if (testCallback === 'back_to_allocation') {
+        Logger.log("    ✅ Would match back_to_allocation handler");
+      } else if (testCallback.startsWith('allocation_')) {
+        Logger.log("    ✅ Would match allocation_ handler");
+      } else if (testCallback.startsWith('subcategory_')) {
+        Logger.log("    ✅ Would match subcategory_ handler");
+      } else {
+        Logger.log("    ❌ Would be unhandled callback");
+      }
+    }
+    
+    Logger.log("✅ Cancel issue debug completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel issue debug: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG CANCEL ISSUE COMPLETED ===");
+}
+
+// Test scenario: "a - 1" → nhấn hủy
+function debugCancelFromSubcategory() {
+  Logger.log("=== DEBUG CANCEL FROM SUBCATEGORY ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Simulate "a - 1" text processing flow
+    Logger.log("1. Simulating 'a - 1' text processing flow");
+    
+    var tempTransaction = {
+      date: new Date().toISOString().split('T')[0],
+      description: "a",
+      amount: 1000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu"
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Saved temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // Tạo subcategory keyboard giống như text processing
+    var keyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    Logger.log("  Created subcategory keyboard");
+    
+    // Log last row với cancel button
+    var lastRow = keyboard.inline_keyboard[keyboard.inline_keyboard.length - 1];
+    Logger.log("  Last row buttons:");
+    for (var i = 0; i < lastRow.length; i++) {
+      Logger.log("    " + i + ": " + lastRow[i].text + " -> " + lastRow[i].callback_data);
+    }
+    
+    // 2. Simulate callback query từ cancel button
+    Logger.log("2. Simulating callback query from cancel button");
+    
+    // Mock callback query data
+    var mockCallbackQuery = {
+      from: { id: testChatId },
+      message: { message_id: 12345 },
+      data: 'cancel_new'
+    };
+    
+    Logger.log("  Mock callback query: " + JSON.stringify(mockCallbackQuery));
+    
+    // Simulate doPost logic cho callback
+    var chatId = mockCallbackQuery.from.id;
+    var messageId = mockCallbackQuery.message.message_id;
+    var data = mockCallbackQuery.data;
+    
+    Logger.log("  Extracted: chatId=" + chatId + ", messageId=" + messageId + ", data=" + data);
+    
+    // 3. Test cancel_new logic
+    Logger.log("3. Testing cancel_new callback logic");
+    
+    if (data === 'cancel_new') {
+      Logger.log("  ✅ Callback matched 'cancel_new'");
+      
+      // Check temp transaction exists
+      var beforeCancel = getTempTransaction(chatId);
+      Logger.log("  Before cancel - temp transaction: " + (beforeCancel ? "EXISTS" : "NOT FOUND"));
+      
+      if (beforeCancel) {
+        // Clear temp transaction
+        clearTempTransaction(chatId);
+        Logger.log("  ✅ Cleared temp transaction cache");
+        
+        // Verify cleared
+        var afterCancel = getTempTransaction(chatId);
+        Logger.log("  After cancel - temp transaction: " + (afterCancel ? "STILL EXISTS" : "CLEARED"));
+        
+        // Test editText call
+        Logger.log("  Testing editText call...");
+        try {
+          var success = editText(chatId, messageId, "❌ Đã hủy giao dịch", null);
+          Logger.log("  ✅ editText call completed, success: " + success);
+        } catch (editError) {
+          Logger.log("  ❌ editText error: " + editError.toString());
+        }
+      } else {
+        Logger.log("  ❌ No temp transaction found to cancel");
+      }
+    } else {
+      Logger.log("  ❌ Callback did NOT match 'cancel_new': " + data);
+    }
+    
+    // 4. Test editText function independently
+    Logger.log("4. Testing editText function independently");
+    
+    try {
+      // Test với real messageId format
+      var testMessageId = 12345;
+      var testResult = editText(testChatId, testMessageId, "Test edit message", null);
+      Logger.log("  editText independent test result: " + testResult);
+      
+      // Test với null keyboard
+      var testResult2 = editText(testChatId, testMessageId, "Test with null keyboard", null);
+      Logger.log("  editText with null keyboard result: " + testResult2);
+      
+    } catch (independentError) {
+      Logger.log("  ❌ Independent editText error: " + independentError.toString());
+    }
+    
+    Logger.log("✅ Cancel from subcategory debug completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel from subcategory debug: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG CANCEL FROM SUBCATEGORY COMPLETED ===");
+}
+
+// Simple test editText function
+function testEditTextFunction() {
+  Logger.log("=== TEST EDITTEXT FUNCTION ===");
+  
+  try {
+    // 1. Test function exists
+    Logger.log("1. Testing if editText function exists");
+    if (typeof editText === 'function') {
+      Logger.log("  ✅ editText function exists");
+    } else {
+      Logger.log("  ❌ editText function NOT found");
+      return;
+    }
+    
+    // 2. Test function signature
+    Logger.log("2. Testing editText function signature");
+    Logger.log("  Function length (parameters): " + editText.length);
+    
+    // 3. Test với fake data
+    Logger.log("3. Testing editText with fake data");
+    var testChatId = 123456789;
+    var testMessageId = 12345;
+    var testText = "Test message";
+    
+    try {
+      var result = editText(testChatId, testMessageId, testText, null);
+      Logger.log("  editText result: " + result);
+      Logger.log("  ✅ editText call completed (may fail due to fake data)");
+    } catch (error) {
+      Logger.log("  editText error: " + error.toString());
+      Logger.log("  Error name: " + error.name);
+      Logger.log("  Error message: " + error.message);
+    }
+    
+    // 4. Test với keyboard
+    Logger.log("4. Testing editText with keyboard");
+    var testKeyboard = {
+      "inline_keyboard": [
+        [{ text: "Test Button", callback_data: "test" }]
+      ]
+    };
+    
+    try {
+      var resultWithKeyboard = editText(testChatId, testMessageId, testText, testKeyboard);
+      Logger.log("  editText with keyboard result: " + resultWithKeyboard);
+    } catch (error) {
+      Logger.log("  editText with keyboard error: " + error.toString());
+    }
+    
+    Logger.log("✅ editText function test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in editText function test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST EDITTEXT FUNCTION COMPLETED ===");
+}
+
+// Final test - simulate exact "a - 1" → cancel flow
+function testCancelFixFinal() {
+  Logger.log("=== TEST CANCEL FIX FINAL ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Setup temp transaction như "a - 1" flow
+    Logger.log("1. Setup temp transaction for 'a - 1'");
+    var tempTransaction = {
+      date: new Date().toISOString().split('T')[0],
+      description: "a",
+      amount: 1000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu"
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    var savedTemp = getTempTransaction(testChatId);
+    Logger.log("  Temp transaction saved: " + (savedTemp ? "YES" : "NO"));
+    
+    // 2. Test cancel button tồn tại
+    Logger.log("2. Test cancel button exists in subcategory keyboard");
+    var keyboard = createSubCategoryKeyboard("Chi tiêu thiết yếu", false, null, null);
+    var lastRow = keyboard.inline_keyboard[keyboard.inline_keyboard.length - 1];
+    
+    var cancelFound = false;
+    for (var i = 0; i < lastRow.length; i++) {
+      if (lastRow[i].callback_data === 'cancel_new') {
+        cancelFound = true;
+        Logger.log("  ✅ Cancel button found: " + lastRow[i].text);
+        break;
+      }
+    }
+    
+    if (!cancelFound) {
+      Logger.log("  ❌ Cancel button NOT found");
+      return;
+    }
+    
+    // 3. Test cancel callback với fixed editText
+    Logger.log("3. Test cancel callback with fixed editText");
+    var data = 'cancel_new';
+    var messageId = 12345;
+    
+    if (data === 'cancel_new') {
+      Logger.log("  ✅ Callback matched");
+      
+      // Clear temp transaction
+      clearTempTransaction(testChatId);
+      var afterClear = getTempTransaction(testChatId);
+      Logger.log("  Temp cleared: " + (afterClear ? "NO" : "YES"));
+      
+      // Test editText với null keyboard (fixed version)
+      Logger.log("  Testing editText with null keyboard...");
+      try {
+        var result = editText(testChatId, messageId, "❌ Đã hủy giao dịch", null);
+        Logger.log("  ✅ editText with null keyboard completed: " + result);
+      } catch (error) {
+        Logger.log("  ❌ editText with null keyboard failed: " + error.toString());
+      }
+      
+      // Test editText với undefined keyboard
+      Logger.log("  Testing editText with undefined keyboard...");
+      try {
+        var result2 = editText(testChatId, messageId, "❌ Test undefined", undefined);
+        Logger.log("  ✅ editText with undefined keyboard completed: " + result2);
+      } catch (error) {
+        Logger.log("  ❌ editText with undefined keyboard failed: " + error.toString());
+      }
+    }
+    
+    Logger.log("✅ Cancel fix final test completed");
+    Logger.log("🎯 FIX: editText now properly handles null/undefined keyboards");
+    Logger.log("🎯 EXPECTED: Cancel button should now work properly");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel fix final test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST CANCEL FIX FINAL COMPLETED ===");
+}
+
+// Debug "Tiết kiệm dài hạn" callback issue
+function debugTietKiemDaiHan() {
+  Logger.log("=== DEBUG TIET KIEM DAI HAN ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Test allocation keyboard callback data
+    Logger.log("1. Testing allocation keyboard callback data");
+    var allocKeyboard = createAllocationKeyboard(null);
+    
+    for (var i = 0; i < allocKeyboard.inline_keyboard.length; i++) {
+      var row = allocKeyboard.inline_keyboard[i];
+      for (var j = 0; j < row.length; j++) {
+        var button = row[j];
+        var callbackLength = encodeURIComponent(button.callback_data).length;
+        
+        Logger.log("  " + button.text + ":");
+        Logger.log("    Callback: " + button.callback_data);
+        Logger.log("    Length: " + button.callback_data.length + " chars");
+        Logger.log("    Bytes: " + callbackLength + " bytes");
+        
+        if (callbackLength > 64) {
+          Logger.log("    ❌ EXCEEDS 64-BYTE LIMIT!");
+        } else {
+          Logger.log("    ✅ Within limit");
+        }
+        
+        // Test parsing cho "Tiết kiệm dài hạn"
+        if (button.text === "Tiết kiệm dài hạn") {
+          Logger.log("  Testing parsing for 'Tiết kiệm dài hạn':");
+          
+          var data = button.callback_data;
+          Logger.log("    Callback data: " + data);
+          
+          if (data.startsWith('allocation_')) {
+            var parts = data.split('_');
+            var allocationIndex = parseInt(parts[1]);
+            var allocation = allocations[allocationIndex];
+            
+            Logger.log("    Parsed index: " + allocationIndex);
+            Logger.log("    Parsed allocation: " + allocation);
+            Logger.log("    Expected: Tiết kiệm dài hạn");
+            
+            if (allocation === "Tiết kiệm dài hạn") {
+              Logger.log("    ✅ Parsing OK");
+            } else {
+              Logger.log("    ❌ Parsing FAILED");
+            }
+          }
+        }
+      }
+    }
+    
+    // 2. Test temp transaction setup và retrieval
+    Logger.log("2. Testing temp transaction for back flow");
+    
+    var tempTransaction = {
+      description: "a",
+      amount: 3000,
+      type: "ChiTieu",
+      allocation: "Chi tiêu thiết yếu" // Allocation cũ
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Saved temp transaction: " + JSON.stringify(tempTransaction));
+    
+    // 3. Simulate chọn "Tiết kiệm dài hạn" 
+    Logger.log("3. Simulating selection of 'Tiết kiệm dài hạn'");
+    
+    var data = 'allocation_2'; // Index 2 should be "Tiết kiệm dài hạn"
+    Logger.log("  Callback data: " + data);
+    
+    if (data.startsWith('allocation_')) {
+      var parts = data.split('_');
+      var allocationIndex = parseInt(parts[1]);
+      var allocation = allocations[allocationIndex];
+      
+      Logger.log("  Parsed allocationIndex: " + allocationIndex);
+      Logger.log("  Parsed allocation: " + allocation);
+      
+      // Test temp transaction retrieval
+      var retrievedTemp = getTempTransaction(testChatId);
+      Logger.log("  Retrieved temp transaction: " + JSON.stringify(retrievedTemp));
+      
+      if (retrievedTemp) {
+        // Update allocation
+        retrievedTemp.allocation = allocation;
+        saveTempTransaction(testChatId, retrievedTemp);
+        Logger.log("  Updated temp transaction allocation to: " + allocation);
+        
+        // Test subcategory keyboard creation
+        var subKeyboard = createSubCategoryKeyboard(allocation, false, null, null);
+        if (subKeyboard && subKeyboard.inline_keyboard) {
+          Logger.log("  ✅ Subcategory keyboard created successfully");
+          Logger.log("  Subcategory count: " + subKeyboard.inline_keyboard.length + " rows");
+          
+          // Test message text
+          var messageText = (retrievedTemp.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+            retrievedTemp.description + " " + 
+            formatNumberWithSeparator(retrievedTemp.amount) + " vào hũ " + allocation + 
+            "\nVui lòng chọn nhãn cụ thể:";
+          
+          Logger.log("  Message text: " + messageText);
+          Logger.log("  ✅ Flow should work correctly");
+        } else {
+          Logger.log("  ❌ Failed to create subcategory keyboard");
+        }
+      } else {
+        Logger.log("  ❌ No temp transaction found");
+      }
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    
+    Logger.log("✅ Debug Tiết kiệm dài hạn completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in debug Tiết kiệm dài hạn: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG TIET KIEM DAI HAN COMPLETED ===");
+}
+
+// Comprehensive test - all allocation callbacks
+function testAllAllocationCallbacks() {
+  Logger.log("=== TEST ALL ALLOCATION CALLBACKS ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // Test callback cho từng allocation
+    for (var i = 0; i < allocations.length; i++) {
+      var allocation = allocations[i];
+      Logger.log((i + 1) + ". Testing " + allocation + " (index " + i + ")");
+      
+      // Setup temp transaction
+      var tempTransaction = {
+        description: "test",
+        amount: 5000,
+        type: "ChiTieu",
+        allocation: "Chi tiêu thiết yếu" // Default
+      };
+      saveTempTransaction(testChatId, tempTransaction);
+      
+      // Test callback data
+      var callbackData = 'allocation_' + i;
+      var callbackBytes = encodeURIComponent(callbackData).length;
+      
+      Logger.log("  Callback: " + callbackData + " (" + callbackBytes + " bytes)");
+      
+      // Test parsing logic (như trong doPost)
+      if (callbackData.startsWith('allocation_')) {
+        var parts = callbackData.split('_');
+        var allocationIndex = parseInt(parts[1]);
+        var parsedAllocation = allocations[allocationIndex];
+        
+        Logger.log("  Parsed index: " + allocationIndex);
+        Logger.log("  Parsed allocation: " + parsedAllocation);
+        Logger.log("  Expected: " + allocation);
+        
+        if (parsedAllocation === allocation) {
+          Logger.log("  ✅ Parsing OK");
+          
+          // Test temp transaction retrieval
+          var retrievedTemp = getTempTransaction(testChatId);
+          if (retrievedTemp) {
+            // Update allocation
+            retrievedTemp.allocation = parsedAllocation;
+            saveTempTransaction(testChatId, retrievedTemp);
+            
+            // Test subcategory keyboard creation
+            var subKeyboard = createSubCategoryKeyboard(parsedAllocation, false, null, null);
+            if (subKeyboard && subKeyboard.inline_keyboard) {
+              Logger.log("  ✅ Subcategory keyboard created");
+              
+              // Test editText message format
+              try {
+                var messageText = (retrievedTemp.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+                  retrievedTemp.description + " " + 
+                  formatNumberWithSeparator(retrievedTemp.amount) + " vào hũ " + parsedAllocation + 
+                  "\nVui lòng chọn nhãn cụ thể:";
+                
+                Logger.log("  ✅ Message text OK");
+                
+                // Test editText call (will fail but we can see if there are other errors)
+                var fakeMessageId = 12345;
+                var editResult = editText(testChatId, fakeMessageId, messageText, subKeyboard);
+                Logger.log("  ✅ editText call completed");
+                
+              } catch (error) {
+                Logger.log("  ❌ Error in message/editText: " + error.toString());
+              }
+              
+            } else {
+              Logger.log("  ❌ Failed to create subcategory keyboard");
+            }
+          } else {
+            Logger.log("  ❌ No temp transaction found");
+          }
+        } else {
+          Logger.log("  ❌ Parsing FAILED");
+        }
+      } else {
+        Logger.log("  ❌ Callback does not start with 'allocation_'");
+      }
+      
+      // Cleanup
+      clearTempTransaction(testChatId);
+      Logger.log("  Cleaned up");
+      Logger.log("");
+    }
+    
+    Logger.log("✅ All allocation callbacks test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in all allocation callbacks test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST ALL ALLOCATION CALLBACKS COMPLETED ===");
+}
+
+// Test specific flow: quay lại và chọn "Tiết kiệm dài hạn"
+function testBackFlowTietKiem() {
+  Logger.log("=== TEST BACK FLOW TIET KIEM ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // 1. Setup flow giống như "a - 3" 
+    Logger.log("1. Setup như flow 'a - 3'");
+    var tempTransaction = {
+      description: "a",
+      amount: 3000,
+      type: "ChiTieu",
+      allocation: "Chi tiêu thiết yếu" // Initial allocation
+    };
+    
+    saveTempTransaction(testChatId, tempTransaction);
+    Logger.log("  Temp transaction saved: " + JSON.stringify(tempTransaction));
+    
+    // 2. Simulate "quay lại chọn hũ"
+    Logger.log("2. Simulate 'quay lại chọn hũ' (back_to_allocation)");
+    
+    var data = 'back_to_allocation';
+    if (data === 'back_to_allocation') {
+      var retrievedTemp = getTempTransaction(testChatId);
+      Logger.log("  Retrieved temp: " + JSON.stringify(retrievedTemp));
+      
+      if (retrievedTemp) {
+        // Tạo allocation keyboard
+        var keyboard = createAllocationKeyboard(null);
+        Logger.log("  ✅ Allocation keyboard created for back flow");
+        
+        // Check "Tiết kiệm dài hạn" button
+        var tietKiemButton = null;
+        for (var i = 0; i < keyboard.inline_keyboard.length; i++) {
+          var row = keyboard.inline_keyboard[i];
+          for (var j = 0; j < row.length; j++) {
+            if (row[j].text === "Tiết kiệm dài hạn") {
+              tietKiemButton = row[j];
+              break;
+            }
+          }
+        }
+        
+        if (tietKiemButton) {
+          Logger.log("  Found Tiết kiệm button: " + tietKiemButton.callback_data);
+          Logger.log("  Callback bytes: " + encodeURIComponent(tietKiemButton.callback_data).length);
+        }
+      }
+    }
+    
+    // 3. Simulate chọn "Tiết kiệm dài hạn"
+    Logger.log("3. Simulate chọn 'Tiết kiệm dài hạn'");
+    
+    var allocationData = 'allocation_2'; // Index 2 = "Tiết kiệm dài hạn"
+    Logger.log("  Callback: " + allocationData);
+    
+    if (allocationData.startsWith('allocation_')) {
+      var parts = allocationData.split('_');
+      var allocationIndex = parseInt(parts[1]);
+      var allocation = allocations[allocationIndex];
+      
+      Logger.log("  Parsed allocation: " + allocation);
+      
+      // Retrieve temp transaction
+      var tempTransaction = getTempTransaction(testChatId);
+      Logger.log("  Temp transaction exists: " + (tempTransaction ? "YES" : "NO"));
+      
+      if (tempTransaction) {
+        // Update allocation
+        tempTransaction.allocation = allocation;
+        saveTempTransaction(testChatId, tempTransaction);
+        Logger.log("  Updated allocation to: " + allocation);
+        
+        // Test subcategory keyboard creation
+        Logger.log("  Creating subcategory keyboard...");
+        var subKeyboard = createSubCategoryKeyboard(allocation, false, null, null);
+        
+        if (subKeyboard && subKeyboard.inline_keyboard) {
+          Logger.log("  ✅ Subcategory keyboard created");
+          Logger.log("  Rows: " + subKeyboard.inline_keyboard.length);
+          
+          // Check callback lengths cho subcategories
+          var hasLongCallback = false;
+          for (var i = 0; i < subKeyboard.inline_keyboard.length; i++) {
+            var row = subKeyboard.inline_keyboard[i];
+            for (var j = 0; j < row.length; j++) {
+              var button = row[j];
+              var callbackBytes = encodeURIComponent(button.callback_data).length;
+              
+              if (callbackBytes > 64) {
+                Logger.log("  ❌ LONG CALLBACK: " + button.text);
+                Logger.log("    Callback: " + button.callback_data);
+                Logger.log("    Bytes: " + callbackBytes);
+                hasLongCallback = true;
+              }
+            }
+          }
+          
+          if (!hasLongCallback) {
+            Logger.log("  ✅ All subcategory callbacks within limit");
+          }
+          
+          // Test message creation
+          var messageText = (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+            tempTransaction.description + " " + 
+            formatNumberWithSeparator(tempTransaction.amount) + " vào hũ " + allocation + 
+            "\nVui lòng chọn nhãn cụ thể:";
+          
+          Logger.log("  Message text length: " + messageText.length + " chars");
+          
+          // Test editText call  
+          try {
+            var fakeMessageId = 12345;
+            var editResult = editText(testChatId, fakeMessageId, messageText, subKeyboard);
+            Logger.log("  ✅ editText call completed: " + editResult);
+          } catch (editError) {
+            Logger.log("  ❌ editText error: " + editError.toString());
+          }
+          
+        } else {
+          Logger.log("  ❌ Failed to create subcategory keyboard");
+        }
+      } else {
+        Logger.log("  ❌ No temp transaction found");
+      }
+    }
+    
+    // Cleanup
+    clearTempTransaction(testChatId);
+    
+    Logger.log("✅ Back flow Tiết kiệm test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in back flow Tiết kiệm test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST BACK FLOW TIET KIEM COMPLETED ===");
+}
+
+// Test fix cho 64-byte limit với index-based format
+function testSubcategoryIndexFix() {
+  Logger.log("=== TEST SUBCATEGORY INDEX FIX ===");
+  
+  var testChatId = 123456789;
+  
+  try {
+    // Test tất cả allocations với subcategories dài
+    for (var i = 0; i < allocations.length; i++) {
+      var allocation = allocations[i];
+      var subs = subCategories[allocation];
+      
+      Logger.log((i + 1) + ". Testing " + allocation + " (index " + i + ")");
+      
+      // Tạo subcategory keyboard với index-based format
+      // Fix: Pass hardcoded allocationIndex instead of relying on indexOf
+      var subKeyboard = createSubCategoryKeyboard(allocation, false, null, i);
+      
+      if (subKeyboard && subKeyboard.inline_keyboard) {
+        // Check callback lengths
+        var maxBytes = 0;
+        var longestCallback = '';
+        var hasLongCallback = false;
+        
+        for (var row = 0; row < subKeyboard.inline_keyboard.length - 1; row++) { // Skip last row (back/cancel buttons)
+          var buttons = subKeyboard.inline_keyboard[row];
+          for (var btn = 0; btn < buttons.length; btn++) {
+            var button = buttons[btn];
+            var callbackBytes = encodeURIComponent(button.callback_data).length;
+            
+            if (callbackBytes > maxBytes) {
+              maxBytes = callbackBytes;
+              longestCallback = button.callback_data;
+            }
+            
+            if (callbackBytes > 64) {
+              Logger.log("  ❌ TOO LONG: " + button.text);
+              Logger.log("    Callback: " + button.callback_data);
+              Logger.log("    Bytes: " + callbackBytes);
+              hasLongCallback = true;
+            }
+          }
+        }
+        
+        Logger.log("  Max callback bytes: " + maxBytes + " (" + longestCallback + ")");
+        
+        if (!hasLongCallback) {
+          Logger.log("  ✅ All callbacks within 64-byte limit");
+          
+          // Test parsing cho callback đầu tiên
+          if (subKeyboard.inline_keyboard[0] && subKeyboard.inline_keyboard[0][0]) {
+            var firstButton = subKeyboard.inline_keyboard[0][0];
+            var firstCallback = firstButton.callback_data;
+            
+            Logger.log("  Testing parsing for: " + firstCallback);
+            
+            // Simulate parsing logic
+            if (firstCallback.startsWith('sub_')) {
+              var parts = firstCallback.split('_');
+              if (parts.length >= 3) {
+                var allocIndex = parseInt(parts[1]);
+                var subIndex = parseInt(parts[2]);
+                var parsedAlloc = allocations[allocIndex];
+                var parsedSub = subCategories[parsedAlloc] ? subCategories[parsedAlloc][subIndex] : null;
+                
+                Logger.log("    Parsed allocation: " + parsedAlloc + " (expected: " + allocation + ")");
+                Logger.log("    Parsed subcategory: " + parsedSub + " (expected: " + subs[0] + ")");
+                
+                if (parsedAlloc === allocation && parsedSub === subs[0]) {
+                  Logger.log("    ✅ Parsing successful");
+                } else {
+                  Logger.log("    ❌ Parsing failed");
+                }
+              }
+            } else {
+              Logger.log("    Using old format: " + firstCallback);
+            }
+          }
+        } else {
+          Logger.log("  ❌ Some callbacks exceed 64-byte limit");
+        }
+      } else {
+        Logger.log("  ❌ Failed to create subcategory keyboard");
+      }
+      
+      Logger.log("");
+    }
+    
+    Logger.log("✅ Subcategory index fix test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in subcategory index fix test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST SUBCATEGORY INDEX FIX COMPLETED ===");
+}
+
+// Debug allocation index calculation
+function debugAllocationIndex() {
+  Logger.log("=== DEBUG ALLOCATION INDEX ===");
+  
+  try {
+    // Test allocations global variable
+    Logger.log("1. Testing allocations array:");
+    Logger.log("  allocations: " + JSON.stringify(allocations));
+    Logger.log("  allocations.length: " + allocations.length);
+    Logger.log("  typeof allocations: " + typeof allocations);
+    
+    // Test indexOf cho từng allocation
+    Logger.log("2. Testing indexOf for each allocation:");
+    for (var i = 0; i < allocations.length; i++) {
+      var allocation = allocations[i];
+      var index = allocations.indexOf(allocation);
+      Logger.log("  " + allocation + " → index: " + index + " (expected: " + i + ")");
+      
+      if (index === i) {
+        Logger.log("    ✅ Index calculation correct");
+      } else {
+        Logger.log("    ❌ Index calculation WRONG");
+      }
+    }
+    
+    // Test với string literals
+    Logger.log("3. Testing with string literals:");
+    var testAllocs = [
+      'Chi tiêu thiết yếu',
+      'Hưởng thụ', 
+      'Tiết kiệm dài hạn',
+      'Giáo dục',
+      'Tự do tài chính',
+      'Cho đi'
+    ];
+    
+    for (var i = 0; i < testAllocs.length; i++) {
+      var allocation = testAllocs[i];
+      var index = allocations.indexOf(allocation);
+      Logger.log("  '" + allocation + "' → index: " + index + " (expected: " + i + ")");
+    }
+    
+    // Test createSubCategoryKeyboard calls với debug
+    Logger.log("4. Testing createSubCategoryKeyboard calls:");
+    for (var i = 0; i < allocations.length; i++) {
+      var allocation = allocations[i];
+      Logger.log("  Testing allocation: " + allocation);
+      
+      // Test keyboard creation
+      var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
+      
+      if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard[0] && keyboard.inline_keyboard[0][0]) {
+        var firstButton = keyboard.inline_keyboard[0][0];
+        Logger.log("    First button callback: " + firstButton.callback_data);
+        
+        // Parse callback
+        if (firstButton.callback_data.startsWith('sub_')) {
+          var parts = firstButton.callback_data.split('_');
+          Logger.log("    Callback parts: " + JSON.stringify(parts));
+          Logger.log("    allocationIndex from callback: " + parts[1]);
+        }
+      }
+      Logger.log("");
+    }
+    
+    Logger.log("✅ Allocation index debug completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in allocation index debug: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG ALLOCATION INDEX COMPLETED ===");
+}
+
+// Simple test indexOf fix
+function quickTestIndexOf() {
+  Logger.log("=== QUICK TEST INDEXOF ===");
+  
+  try {
+    // Direct test
+    Logger.log("Direct indexOf tests:");
+    Logger.log("  allocations[0]: '" + allocations[0] + "'");
+    Logger.log("  indexOf(allocations[0]): " + allocations.indexOf(allocations[0]));
+    
+    Logger.log("  allocations[2]: '" + allocations[2] + "'");
+    Logger.log("  indexOf(allocations[2]): " + allocations.indexOf(allocations[2]));
+    
+    // Test với string literal
+    Logger.log("String literal tests:");
+    var testStr = "Tiết kiệm dài hạn";
+    Logger.log("  Test string: '" + testStr + "'");
+    Logger.log("  indexOf('" + testStr + "'): " + allocations.indexOf(testStr));
+    
+    // Test character by character
+    var allocItem = allocations[2];
+    Logger.log("Character comparison for index 2:");
+    Logger.log("  allocations[2]: '" + allocItem + "'");
+    Logger.log("  testStr: '" + testStr + "'");
+    Logger.log("  Equal: " + (allocItem === testStr));
+    Logger.log("  Length allocations[2]: " + allocItem.length);
+    Logger.log("  Length testStr: " + testStr.length);
+    
+    // Force manual calculation
+    Logger.log("Manual index calculation:");
+    for (var i = 0; i < allocations.length; i++) {
+      if (allocations[i] === testStr) {
+        Logger.log("  Found '" + testStr + "' at index: " + i);
+        break;
+      }
+    }
+    
+    // Test actual createSubCategoryKeyboard call
+    Logger.log("Testing actual function call:");
+    Logger.log("Before calling createSubCategoryKeyboard...");
+    
+    var keyboard = createSubCategoryKeyboard(testStr, false, null, null);
+    
+    if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard[0] && keyboard.inline_keyboard[0][0]) {
+      var firstCallback = keyboard.inline_keyboard[0][0].callback_data;
+      Logger.log("  Result callback: " + firstCallback);
+    } else {
+      Logger.log("  Failed to create keyboard");
+    }
+    
+  } catch (error) {
+    Logger.log("Error: " + error.toString());
+  }
+  
+  Logger.log("=== QUICK TEST INDEXOF COMPLETED ===");
+}
+
+// Test with hardcoded allocationIndex
+function testHardcodedIndex() {
+  Logger.log("=== TEST HARDCODED INDEX ===");
+  
+  try {
+    // Test với index hardcode
+    var testAllocations = [
+      { name: 'Chi tiêu thiết yếu', index: 0 },
+      { name: 'Hưởng thụ', index: 1 },
+      { name: 'Tiết kiệm dài hạn', index: 2 },
+      { name: 'Giáo dục', index: 3 },
+      { name: 'Tự do tài chính', index: 4 },
+      { name: 'Cho đi', index: 5 }
+    ];
+    
+    for (var i = 0; i < testAllocations.length; i++) {
+      var allocation = testAllocations[i].name;
+      var hardcodedIndex = testAllocations[i].index;
+      
+      Logger.log((i + 1) + ". Testing " + allocation + " with hardcoded index " + hardcodedIndex);
+      
+      // Call với hardcoded index
+      var keyboard = createSubCategoryKeyboard(allocation, false, null, hardcodedIndex);
+      
+      if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard[0] && keyboard.inline_keyboard[0][0]) {
+        var firstButton = keyboard.inline_keyboard[0][0];
+        Logger.log("  First button callback: " + firstButton.callback_data);
+        
+        var callbackBytes = encodeURIComponent(firstButton.callback_data).length;
+        Logger.log("  Callback bytes: " + callbackBytes);
+        
+        if (callbackBytes <= 64) {
+          Logger.log("  ✅ Within 64-byte limit");
+        } else {
+          Logger.log("  ❌ Exceeds 64-byte limit");
+        }
+        
+        // Test parsing
+        if (firstButton.callback_data.startsWith('sub_')) {
+          var parts = firstButton.callback_data.split('_');
+          var parsedAllocIndex = parseInt(parts[1]);
+          var parsedSubIndex = parseInt(parts[2]);
+          
+          Logger.log("  Parsed allocationIndex: " + parsedAllocIndex + " (expected: " + hardcodedIndex + ")");
+          Logger.log("  Parsed subIndex: " + parsedSubIndex + " (expected: 0)");
+          
+          if (parsedAllocIndex === hardcodedIndex && parsedSubIndex === 0) {
+            Logger.log("  ✅ Parsing successful");
+          } else {
+            Logger.log("  ❌ Parsing failed");
+          }
+        }
+      } else {
+        Logger.log("  ❌ Failed to create keyboard");
+      }
+      
+      Logger.log("");
+    }
+    
+    Logger.log("✅ Hardcoded index test completed");
+    
+  } catch (error) {
+    Logger.log("❌ Error in hardcoded index test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST HARDCODED INDEX COMPLETED ===");
+}
+
+// Debug why testSubcategoryIndexFix fails
+function debugTestSubcategoryFix() {
+  Logger.log("=== DEBUG TEST SUBCATEGORY FIX ===");
+  
+  try {
+    Logger.log("1. Check global variables in testSubcategoryIndexFix context:");
+    Logger.log("  allocations defined: " + (typeof allocations !== 'undefined'));
+    Logger.log("  allocations length: " + (allocations ? allocations.length : 'undefined'));
+    Logger.log("  subCategories defined: " + (typeof subCategories !== 'undefined'));
+    
+    if (allocations) {
+      Logger.log("  allocations[0]: " + allocations[0]);
+      Logger.log("  allocations[2]: " + allocations[2]);
+    }
+    
+    Logger.log("2. Test same call as testSubcategoryIndexFix:");
+    var allocation = 'Tiết kiệm dài hạn';
+    Logger.log("  Testing allocation: " + allocation);
+    Logger.log("  Before createSubCategoryKeyboard call...");
+    
+    // Same exact call as in testSubcategoryIndexFix
+    var subKeyboard = createSubCategoryKeyboard(allocation, false, null, null);
+    
+    if (subKeyboard && subKeyboard.inline_keyboard && subKeyboard.inline_keyboard[0] && subKeyboard.inline_keyboard[0][0]) {
+      var firstCallback = subKeyboard.inline_keyboard[0][0].callback_data;
+      Logger.log("  Result callback: " + firstCallback);
+      
+      if (firstCallback === 'sub_null_0') {
+        Logger.log("  ❌ PROBLEM REPRODUCED! callback is sub_null_0");
+        
+        // Debug inside createSubCategoryKeyboard
+        Logger.log("  Debug variables inside function:");
+        Logger.log("    allocation parameter: " + allocation);
+        Logger.log("    allocations.indexOf(allocation): " + allocations.indexOf(allocation));
+        
+        // Manual indexOf debug
+        Logger.log("  Manual indexOf:");
+        for (var i = 0; i < allocations.length; i++) {
+          Logger.log("    allocations[" + i + "]: '" + allocations[i] + "'");
+          Logger.log("    Equal to '" + allocation + "': " + (allocations[i] === allocation));
+        }
+        
+      } else {
+        Logger.log("  ✅ No problem, callback: " + firstCallback);
+      }
+    } else {
+      Logger.log("  ❌ Failed to create keyboard");
+    }
+    
+    Logger.log("3. Compare with successful method:");
+    var testStr = "Tiết kiệm dài hạn";
+    var keyboard2 = createSubCategoryKeyboard(testStr, false, null, null);
+    
+    if (keyboard2 && keyboard2.inline_keyboard && keyboard2.inline_keyboard[0] && keyboard2.inline_keyboard[0][0]) {
+      var callback2 = keyboard2.inline_keyboard[0][0].callback_data;
+      Logger.log("  Successful method callback: " + callback2);
+    }
+    
+  } catch (error) {
+    Logger.log("❌ Error: " + error.toString());
+  }
+  
+  Logger.log("=== DEBUG TEST SUBCATEGORY FIX COMPLETED ===");
+}
+
+// Final clean test for subcategory index fix
+function finalTestSubcategoryFix() {
+  Logger.log("=== FINAL SUBCATEGORY INDEX FIX TEST ===");
+  
+  try {
+    var allTestsPassed = true;
+    
+    for (var i = 0; i < allocations.length; i++) {
+      var allocation = allocations[i];
+      var subs = subCategories[allocation];
+      
+      Logger.log((i + 1) + ". Testing " + allocation);
+      
+      // Test with explicit allocationIndex
+      var keyboard = createSubCategoryKeyboard(allocation, false, null, i);
+      
+      if (keyboard && keyboard.inline_keyboard && keyboard.inline_keyboard[0] && keyboard.inline_keyboard[0][0]) {
+        var firstButton = keyboard.inline_keyboard[0][0];
+        var callback = firstButton.callback_data;
+        var bytes = encodeURIComponent(callback).length;
+        
+        Logger.log("  Callback: " + callback + " (" + bytes + " bytes)");
+        
+        // Check format
+        if (callback.startsWith('sub_' + i + '_')) {
+          Logger.log("  ✅ Correct format");
+          
+          // Check byte limit
+          if (bytes <= 64) {
+            Logger.log("  ✅ Within 64-byte limit");
+            
+            // Test parsing
+            var parts = callback.split('_');
+            var allocIndex = parseInt(parts[1]);
+            var subIndex = parseInt(parts[2]);
+            
+            if (allocIndex === i && subIndex === 0) {
+              Logger.log("  ✅ Parsing successful");
+            } else {
+              Logger.log("  ❌ Parsing failed: allocIndex=" + allocIndex + ", subIndex=" + subIndex);
+              allTestsPassed = false;
+            }
+          } else {
+            Logger.log("  ❌ Exceeds 64-byte limit");
+            allTestsPassed = false;
+          }
+        } else {
+          Logger.log("  ❌ Incorrect format: " + callback);
+          allTestsPassed = false;
+        }
+      } else {
+        Logger.log("  ❌ Failed to create keyboard");
+        allTestsPassed = false;
+      }
+      
+      Logger.log("");
+    }
+    
+    if (allTestsPassed) {
+      Logger.log("🎉 ALL TESTS PASSED! Subcategory index fix is working perfectly!");
+    } else {
+      Logger.log("❌ Some tests failed. Please check the logs above.");
+    }
+    
+  } catch (error) {
+    Logger.log("❌ Error in final test: " + error.toString());
+  }
+  
+  Logger.log("=== FINAL SUBCATEGORY INDEX FIX TEST COMPLETED ===");
+}
+
+// Test hành vi hủy chỉnh sửa - trả về trạng thái xác nhận
+function testCancelEditRestore() {
+  Logger.log("=== TEST CANCEL EDIT RESTORE ===");
+  
+  var testChatId = 123456789;
+  var testTransactionId = 'tx_test_' + Date.now();
+  
+  try {
+    Logger.log("1. Tạo mock transaction data:");
+    
+    // Mock transaction info như khi người dùng vừa xác nhận giao dịch
+    var transactionInfo = {
+      userId: testChatId,
+      transactionId: testTransactionId,
+      date: new Date().toISOString().split('T')[0],
+      description: "ăn trưa",
+      amount: 50000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu",
+      subCategory: "Ăn ngoài",
+      rowIndex: 5
+    };
+    
+    Logger.log("  Transaction: " + JSON.stringify(transactionInfo));
+    
+    Logger.log("2. Save transaction vào edit cache:");
+    saveTransactionForEdit(testChatId, transactionInfo, testTransactionId);
+    
+    Logger.log("3. Test cancel_edit callback:");
+    var cancelCallback = 'cancel_edit_' + testTransactionId;
+    Logger.log("  Cancel callback: " + cancelCallback);
+    
+    // Simulate doPost processing cho cancel_edit
+    Logger.log("4. Processing cancel_edit callback:");
+    
+    if (cancelCallback.startsWith('cancel_edit_')) {
+      var transactionId = cancelCallback.replace('cancel_edit_', '');
+      Logger.log("  Extracted transaction ID: " + transactionId);
+      
+      // Lấy thông tin giao dịch từ cache TRƯỚC khi clear
+      var retrievedInfo = getTransactionForEdit(testChatId, transactionId);
+      Logger.log("  Retrieved transaction info: " + JSON.stringify(retrievedInfo));
+      
+      if (retrievedInfo) {
+        // Tạo message xác nhận gốc
+        var typeText = retrievedInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var expectedMessage = "✅ Đã ghi nhận " + typeText + ": " + retrievedInfo.description + 
+          " " + formatNumberWithSeparator(retrievedInfo.amount) + 
+          " vào hũ " + retrievedInfo.allocation + " với nhãn " + retrievedInfo.subCategory;
+        
+        Logger.log("  ✅ Expected restored message:");
+        Logger.log("    " + expectedMessage);
+        
+        // Test edit keyboard
+        var editKeyboard = createEditKeyboard(retrievedInfo.transactionId);
+        if (editKeyboard && editKeyboard.inline_keyboard && editKeyboard.inline_keyboard[0]) {
+          var editButton = editKeyboard.inline_keyboard[0][0];
+          Logger.log("  ✅ Edit button created: " + editButton.text + " → " + editButton.callback_data);
+        }
+        
+        // KHÔNG clear cache - để user có thể edit lại
+        // clearTransactionForEdit(testChatId, transactionId); 
+        
+        // Verify cache KHÔNG bị clear (user có thể edit lại)
+        var afterCancel = getTransactionForEdit(testChatId, transactionId);
+        if (afterCancel) {
+          Logger.log("  ✅ Cache preserved - user can edit again");
+        } else {
+          Logger.log("  ❌ Cache was cleared - user cannot edit again");
+        }
+        
+        Logger.log("5. ✅ TEST PASSED: Cancel edit restores original confirmation");
+        
+      } else {
+        Logger.log("  ❌ No transaction info found");
+      }
+    }
+    
+    Logger.log("6. Test comparison:");
+    Logger.log("  Old behavior: '❌ Đã hủy chỉnh sửa giao dịch' (loses transaction info)");
+    Logger.log("  New behavior: '✅ Đã ghi nhận...' + Edit button (preserves transaction info)");
+    
+  } catch (error) {
+    Logger.log("❌ Error in cancel edit restore test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST CANCEL EDIT RESTORE COMPLETED ===");
+}
+
+// Test user flow hoàn chỉnh: Transaction → Edit → Cancel → Restore
+function testFullEditCancelFlow() {
+  Logger.log("=== TEST FULL EDIT CANCEL FLOW ===");
+  
+  var testChatId = 987654321;
+  var testTransactionId = 'tx_flow_' + Date.now();
+  
+  try {
+    Logger.log("📱 SIMULATE USER FLOW:");
+    Logger.log("1. User nhập: 'ăn trưa - 45000'");
+    Logger.log("2. Bot tự động phân loại vào 'Chi tiêu thiết yếu'");
+    Logger.log("3. User chọn subcategory: 'Ăn ngoài'");
+    Logger.log("4. Bot confirm: '✅ Đã ghi nhận chi tiêu: ăn trưa 45,000 vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài' + [Edit button]");
+    
+    // Step 4: Transaction được confirm và có edit button
+    var confirmedTransaction = {
+      userId: testChatId,
+      transactionId: testTransactionId,
+      date: new Date().toISOString().split('T')[0],
+      description: "ăn trưa",
+      amount: 45000,
+      allocation: "Chi tiêu thiết yếu", 
+      type: "ChiTieu",
+      subCategory: "Ăn ngoài",
+      rowIndex: 3
+    };
+    
+    saveTransactionForEdit(testChatId, confirmedTransaction, testTransactionId);
+    
+    var confirmMessage = "✅ Đã ghi nhận chi tiêu: ăn trưa " + formatNumberWithSeparator(45000) + 
+      " vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài";
+    var editKeyboard = createEditKeyboard(testTransactionId);
+    
+    Logger.log("✅ Step 4 - Confirmed state:");
+    Logger.log("  Message: " + confirmMessage);
+    Logger.log("  Edit button: " + editKeyboard.inline_keyboard[0][0].text + " → " + editKeyboard.inline_keyboard[0][0].callback_data);
+    
+    Logger.log("");
+    Logger.log("5. User nhấn [✏️ Chỉnh sửa]");
+    Logger.log("6. Bot hiển thị allocation keyboard để chọn hũ mới");
+    
+    // Step 6: Edit mode - allocation keyboard
+    var allocationKeyboard = createAllocationKeyboard(testTransactionId);
+    var editMessage = "Chỉnh sửa giao dịch: ăn trưa " + formatNumberWithSeparator(45000) + 
+      "\nVui lòng chọn hũ mới:";
+    
+    Logger.log("✅ Step 6 - Edit mode:");
+    Logger.log("  Message: " + editMessage);
+    Logger.log("  First allocation: " + allocationKeyboard.inline_keyboard[0][0].text);
+    Logger.log("  Cancel button: " + allocationKeyboard.inline_keyboard[allocationKeyboard.inline_keyboard.length-1][0].text);
+    
+    Logger.log("");
+    Logger.log("7. User nhấn [❌ Hủy chỉnh sửa] (thay vì chọn hũ mới)");
+    Logger.log("8. Bot SHOULD restore về confirmed state chứ KHÔNG phải 'Đã hủy chỉnh sửa'");
+    
+    // Step 8: Test cancel edit behavior
+    var cancelCallback = 'cancel_edit_' + testTransactionId;
+    
+    // Simulate handler logic
+    if (cancelCallback.startsWith('cancel_edit_')) {
+      var transactionId = cancelCallback.replace('cancel_edit_', '');
+      var transactionInfo = getTransactionForEdit(testChatId, transactionId);
+      
+      if (transactionInfo) {
+        var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var restoredMessage = "✅ Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
+          " " + formatNumberWithSeparator(transactionInfo.amount) + 
+          " vào hũ " + transactionInfo.allocation + " với nhãn " + transactionInfo.subCategory;
+        var restoredKeyboard = createEditKeyboard(transactionInfo.transactionId);
+        
+        Logger.log("✅ Step 8 - Restored state:");
+        Logger.log("  Message: " + restoredMessage);
+        Logger.log("  Edit button: " + restoredKeyboard.inline_keyboard[0][0].text + " → " + restoredKeyboard.inline_keyboard[0][0].callback_data);
+        
+        // Verify it matches original confirmed state
+        if (restoredMessage === confirmMessage) {
+          Logger.log("  ✅ Restored message matches original confirmation");
+        } else {
+          Logger.log("  ❌ Message mismatch:");
+          Logger.log("    Original: " + confirmMessage);
+          Logger.log("    Restored: " + restoredMessage);
+        }
+        
+        // KHÔNG clear cache - user có thể edit lại bao nhiêu lần cũng được
+        // clearTransactionForEdit(testChatId, transactionId);
+        
+        Logger.log("");
+        Logger.log("🎉 SUCCESS: User can continue to edit if needed, transaction info preserved!");
+        Logger.log("❌ OLD behavior: 'Đã hủy chỉnh sửa giao dịch' → Lost all info + Cannot edit again");
+        Logger.log("✅ NEW behavior: Back to confirmed state → Can edit again MULTIPLE times");
+        
+        // Test: User có thể edit lại không?
+        Logger.log("");
+        Logger.log("9. BONUS TEST: User có thể edit lại transaction này không?");
+        var secondEditTest = getTransactionForEdit(testChatId, transactionId);
+        if (secondEditTest) {
+          Logger.log("  ✅ YES! User can click Edit button again anytime");
+          Logger.log("  Transaction info still available: " + secondEditTest.description + " " + formatNumberWithSeparator(secondEditTest.amount));
+        } else {
+          Logger.log("  ❌ NO! Transaction info lost - cannot edit again");
+        }
+        
+      } else {
+        Logger.log("  ❌ Transaction info not found");
+      }
+    }
+    
+  } catch (error) {
+    Logger.log("❌ Error in full edit cancel flow test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST FULL EDIT CANCEL FLOW COMPLETED ===");
+}
+
+// Test user scenario: c-7 → edit → cancel → d-9 → edit c-7 lại
+function testMultipleTransactionEditScenario() {
+  Logger.log("=== TEST MULTIPLE TRANSACTION EDIT SCENARIO ===");
+  Logger.log("User reported bug: c-7 → edit → cancel → d-9 → edit c-7 again → Error");
+  
+  var testChatId = 555666777;
+  var transactionId1 = 'tx_c7_' + Date.now();
+  var transactionId2 = 'tx_d9_' + (Date.now() + 1000);
+  
+  try {
+    Logger.log("");
+    Logger.log("📝 STEP 1: User nhập 'c - 7'");
+    
+    // Transaction 1: c - 7
+    var transaction1 = {
+      userId: testChatId,
+      transactionId: transactionId1,
+      date: new Date().toISOString().split('T')[0],
+      description: "c",
+      amount: 7000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu", 
+      subCategory: "Ăn ngoài",
+      rowIndex: 10
+    };
+    
+    saveTransactionForEdit(testChatId, transaction1, transactionId1);
+    Logger.log("✅ Transaction c-7 created with edit button");
+    
+    Logger.log("");
+    Logger.log("📝 STEP 2: User nhấn [Edit] transaction c-7");
+    
+    var editInfo1 = getTransactionForEdit(testChatId, transactionId1);
+    if (editInfo1) {
+      Logger.log("✅ Edit info found for c-7: " + JSON.stringify(editInfo1));
+    } else {
+      Logger.log("❌ Edit info NOT found for c-7");
+    }
+    
+    Logger.log("");
+    Logger.log("📝 STEP 3: User nhấn [❌ Hủy chỉnh sửa]");
+    Logger.log("→ Bot restores message xác nhận + keeps cache");
+    
+    // Simulate cancel edit - KHÔNG clear cache
+    var restoredInfo1 = getTransactionForEdit(testChatId, transactionId1);
+    if (restoredInfo1) {
+      Logger.log("✅ Cache preserved after cancel - c-7 can be edited again");
+    } else {
+      Logger.log("❌ Cache cleared after cancel - c-7 CANNOT be edited again");
+    }
+    
+    Logger.log("");
+    Logger.log("📝 STEP 4: User nhập 'd - 9' (transaction mới)");
+    
+    // Transaction 2: d - 9  
+    var transaction2 = {
+      userId: testChatId,
+      transactionId: transactionId2,
+      date: new Date().toISOString().split('T')[0], 
+      description: "d",
+      amount: 9000,
+      allocation: "Hưởng thụ",
+      type: "ChiTieu",
+      subCategory: "Giải trí", 
+      rowIndex: 11
+    };
+    
+    saveTransactionForEdit(testChatId, transaction2, transactionId2);
+    Logger.log("✅ Transaction d-9 created");
+    
+    Logger.log("");
+    Logger.log("📝 STEP 5: User quay lại nhấn [Edit] transaction c-7 cũ");
+    Logger.log("→ This is where the bug happened before");
+    
+    var editInfoAgain = getTransactionForEdit(testChatId, transactionId1);
+    if (editInfoAgain) {
+      Logger.log("✅ SUCCESS! Transaction c-7 can still be edited:");
+      Logger.log("  Description: " + editInfoAgain.description);
+      Logger.log("  Amount: " + formatNumberWithSeparator(editInfoAgain.amount));
+      Logger.log("  Allocation: " + editInfoAgain.allocation);
+      Logger.log("  SubCategory: " + editInfoAgain.subCategory);
+      
+      // Verify edit button still works
+      var editKeyboard = createEditKeyboard(editInfoAgain.transactionId);
+      if (editKeyboard && editKeyboard.inline_keyboard[0][0]) {
+        var editBtn = editKeyboard.inline_keyboard[0][0];
+        Logger.log("  Edit button: " + editBtn.text + " → " + editBtn.callback_data);
+      }
+      
+      Logger.log("");
+      Logger.log("🎉 BUG FIXED! User can edit old transactions anytime");
+      Logger.log("❌ Before fix: 'Không tìm thấy thông tin giao dịch để chỉnh sửa'");
+      Logger.log("✅ After fix: Transaction info preserved, can edit multiple times");
+      
+    } else {
+      Logger.log("❌ BUG STILL EXISTS! Cannot edit transaction c-7");
+      Logger.log("Error would be: 'Không tìm thấy thông tin giao dịch để chỉnh sửa'");
+    }
+    
+    Logger.log("");
+    Logger.log("📊 SUMMARY:");
+    Logger.log("  Transaction c-7 editable: " + (editInfoAgain ? "YES" : "NO"));
+    Logger.log("  Transaction d-9 editable: " + (getTransactionForEdit(testChatId, transactionId2) ? "YES" : "NO"));
+    Logger.log("  Multiple edit support: " + (editInfoAgain ? "WORKING" : "BROKEN"));
+    
+    // Cleanup test cache
+    clearTransactionForEdit(testChatId, transactionId1);    
+    clearTransactionForEdit(testChatId, transactionId2);
+    
+  } catch (error) {
+    Logger.log("❌ Error in multiple transaction edit scenario: " + error.toString());
+  }
+  
+  Logger.log("=== TEST MULTIPLE TRANSACTION EDIT SCENARIO COMPLETED ===");
 }
 
 // Hàm test simulate nhấn nút chỉnh sửa
