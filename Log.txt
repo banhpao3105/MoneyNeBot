@@ -1,19 +1,104 @@
-11:06:52	Chú ý	Đã bắt đầu quá trình thực thi
-11:07:29	Thông tin	=== TEST EDIT BUTTON ===
-11:07:29	Thông tin	1. Saving mock transaction to cache...
-11:07:29	Thông tin	2. Simulating edit_transaction callback...
-11:07:29	Thông tin	3. Calling doPost with mock request...
-11:07:29	Thông tin	=== DOPOST DEBUG ===
-11:07:29	Thông tin	Request contents: {"callback_query":{"from":{"id":"TEST_EDIT_123","first_name":"TestUser"},"data":"edit_transaction"}}
-11:07:29	Thông tin	CALLBACK QUERY DETECTED:
-11:07:29	Thông tin	Chat ID: TEST_EDIT_123
-11:07:29	Thông tin	Callback data: edit_transaction
-11:07:29	Thông tin	DEBUG: edit_transaction callback received for user: TEST_EDIT_123
-11:07:29	Thông tin	DEBUG: transactionInfo from cache: {"userId":"TEST_EDIT_123","date":"2025-08-05T04:07:29.842Z","description":"Cà phê sáng","amount":25000,"allocation":"Chi tiêu thiết yếu","type":"ChiTieu","subCategory":"Ăn ngoài","rowIndex":3}
-11:07:29	Thông tin	DEBUG: Allocation keyboard created with 3 rows
-11:07:29	Thông tin	Keyboard row 1: [{"text":"Chi tiêu thiết yếu","callback_data":"edit_allocation_Chi tiêu thiết yếu"},{"text":"Hưởng thụ","callback_data":"edit_allocation_Hưởng thụ"}]
-11:07:29	Thông tin	Keyboard row 2: [{"text":"Tiết kiệm dài hạn","callback_data":"edit_allocation_Tiết kiệm dài hạn"},{"text":"Giáo dục","callback_data":"edit_allocation_Giáo dục"}]
-11:07:29	Thông tin	Keyboard row 3: [{"text":"Tự do tài chính","callback_data":"edit_allocation_Tự do tài chính"},{"text":"Cho đi","callback_data":"edit_allocation_Cho đi"}]
-11:07:30	Thông tin	❌ doPost failed: Exception: Request failed for https://api.telegram.org returned code 400. Truncated server response: {"ok":false,"error_code":400,"description":"Bad Request: chat not found"} (use muteHttpExceptions option to examine full response)
-11:07:30	Thông tin	=== TEST EDIT BUTTON COMPLETED ===
-11:06:52	Chú ý	Đã hoàn tất quá trình thực thi
+12:25:13	Chú ý	Đã bắt đầu quá trình thực thi
+12:25:50	Thông tin	=== TEST EACH ALLOCATION ===
+12:25:50	Thông tin	Testing allocation 1: Chi tiêu thiết yếu
+12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_0_Chi tiêu thiết yếu
+12:25:50	Thông tin	  Callback length: 53 chars
+12:25:50	Thông tin	  Callback bytes: 80 bytes
+12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","0","Chi tiêu thiết yếu"]
+12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:50	Thông tin	  Parsed allocation: 0_Chi tiêu thiết yếu
+12:25:50	Thông tin	  ❌ Chi tiêu thiết yếu - PARSING FAILED
+12:25:50	Thông tin	    Expected: 'Chi tiêu thiết yếu'
+12:25:50	Thông tin	    Got: '0_Chi tiêu thiết yếu'
+12:25:50	Thông tin	  ✅ Chi tiêu thiết yếu - SUBCATEGORY KEYBOARD OK
+12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_0_Chi tiêu thiết yếu_Nhà ở
+12:25:50	Thông tin	    Subcategory callback length: 60 chars
+12:25:50	Thông tin	    Subcategory callback bytes: 102 bytes
+12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:50	Thông tin	  ⚠️ Chi tiêu thiết yếu - CALLBACK TOO LONG (>64 bytes)
+12:25:50	Thông tin	
+12:25:50	Thông tin	Testing allocation 2: Hưởng thụ
+12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_1_Hưởng thụ
+12:25:50	Thông tin	  Callback length: 44 chars
+12:25:50	Thông tin	  Callback bytes: 67 bytes
+12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","1","Hưởng thụ"]
+12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:50	Thông tin	  Parsed allocation: 1_Hưởng thụ
+12:25:50	Thông tin	  ❌ Hưởng thụ - PARSING FAILED
+12:25:50	Thông tin	    Expected: 'Hưởng thụ'
+12:25:50	Thông tin	    Got: '1_Hưởng thụ'
+12:25:50	Thông tin	  ✅ Hưởng thụ - SUBCATEGORY KEYBOARD OK
+12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_1_Hưởng thụ_Giải trí
+12:25:50	Thông tin	    Subcategory callback length: 54 chars
+12:25:50	Thông tin	    Subcategory callback bytes: 92 bytes
+12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:50	Thông tin	  ⚠️ Hưởng thụ - CALLBACK TOO LONG (>64 bytes)
+12:25:50	Thông tin	
+12:25:50	Thông tin	Testing allocation 3: Tiết kiệm dài hạn
+12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_2_Tiết kiệm dài hạn
+12:25:50	Thông tin	  Callback length: 52 chars
+12:25:50	Thông tin	  Callback bytes: 87 bytes
+12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","2","Tiết kiệm dài hạn"]
+12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:50	Thông tin	  Parsed allocation: 2_Tiết kiệm dài hạn
+12:25:50	Thông tin	  ❌ Tiết kiệm dài hạn - PARSING FAILED
+12:25:50	Thông tin	    Expected: 'Tiết kiệm dài hạn'
+12:25:50	Thông tin	    Got: '2_Tiết kiệm dài hạn'
+12:25:50	Thông tin	  ✅ Tiết kiệm dài hạn - SUBCATEGORY KEYBOARD OK
+12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_2_Tiết kiệm dài hạn_Mua sắm những món đồ giá trị
+12:25:50	Thông tin	    Subcategory callback length: 82 chars
+12:25:50	Thông tin	    Subcategory callback bytes: 176 bytes
+12:25:50	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:50	Thông tin	  ⚠️ Tiết kiệm dài hạn - CALLBACK TOO LONG (>64 bytes)
+12:25:50	Thông tin	
+12:25:50	Thông tin	Testing allocation 4: Giáo dục
+12:25:50	Thông tin	  Callback data: edit_allocation_tx_1754371550945_3_Giáo dục
+12:25:50	Thông tin	  Callback length: 43 chars
+12:25:50	Thông tin	  Callback bytes: 58 bytes
+12:25:50	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","3","Giáo dục"]
+12:25:50	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:50	Thông tin	  Parsed allocation: 3_Giáo dục
+12:25:50	Thông tin	  ❌ Giáo dục - PARSING FAILED
+12:25:50	Thông tin	    Expected: 'Giáo dục'
+12:25:50	Thông tin	    Got: '3_Giáo dục'
+12:25:50	Thông tin	  ✅ Giáo dục - SUBCATEGORY KEYBOARD OK
+12:25:50	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_3_Giáo dục_Sách
+12:25:51	Thông tin	    Subcategory callback length: 49 chars
+12:25:51	Thông tin	    Subcategory callback bytes: 69 bytes
+12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:51	Thông tin	
+12:25:51	Thông tin	Testing allocation 5: Tự do tài chính
+12:25:51	Thông tin	  Callback data: edit_allocation_tx_1754371550945_4_Tự do tài chính
+12:25:51	Thông tin	  Callback length: 50 chars
+12:25:51	Thông tin	  Callback bytes: 74 bytes
+12:25:51	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","4","Tự do tài chính"]
+12:25:51	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:51	Thông tin	  Parsed allocation: 4_Tự do tài chính
+12:25:51	Thông tin	  ❌ Tự do tài chính - PARSING FAILED
+12:25:51	Thông tin	    Expected: 'Tự do tài chính'
+12:25:51	Thông tin	    Got: '4_Tự do tài chính'
+12:25:51	Thông tin	  ✅ Tự do tài chính - SUBCATEGORY KEYBOARD OK
+12:25:51	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_4_Tự do tài chính_Đầu tư
+12:25:51	Thông tin	    Subcategory callback length: 58 chars
+12:25:51	Thông tin	    Subcategory callback bytes: 102 bytes
+12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:51	Thông tin	  ⚠️ Tự do tài chính - CALLBACK TOO LONG (>64 bytes)
+12:25:51	Thông tin	
+12:25:51	Thông tin	Testing allocation 6: Cho đi
+12:25:51	Thông tin	  Callback data: edit_allocation_tx_1754371550945_5_Cho đi
+12:25:51	Thông tin	  Callback length: 41 chars
+12:25:51	Thông tin	  Callback bytes: 48 bytes
+12:25:51	Thông tin	  Split parts: ["edit","allocation","tx","1754371550945","5","Cho đi"]
+12:25:51	Thông tin	  Parsed transactionId: tx_1754371550945
+12:25:51	Thông tin	  Parsed allocation: 5_Cho đi
+12:25:51	Thông tin	  ❌ Cho đi - PARSING FAILED
+12:25:51	Thông tin	    Expected: 'Cho đi'
+12:25:51	Thông tin	    Got: '5_Cho đi'
+12:25:51	Thông tin	  ✅ Cho đi - SUBCATEGORY KEYBOARD OK
+12:25:51	Thông tin	    Sample subcategory callback: edit_subcategory_tx_1754371550945_5_Cho đi_Từ thiện
+12:25:51	Thông tin	    Subcategory callback length: 51 chars
+12:25:51	Thông tin	    Subcategory callback bytes: 76 bytes
+12:25:51	Thông tin	    ⚠️ SUBCATEGORY CALLBACK TOO LONG!
+12:25:51	Thông tin	
+12:25:51	Thông tin	=== TEST EACH ALLOCATION COMPLETED ===
+12:25:14	Chú ý	Đã hoàn tất quá trình thực thi
