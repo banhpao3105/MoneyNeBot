@@ -1,14 +1,15 @@
 Tôi muốn bạn thay đổi 6 hủ thành: Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi. Trong đó Chi tiêu thiết yếu gồm: 
 1. Chi tiêu thiết yếu:
 Nhà ở: Tiền thuê nhà hoặc trả góp mua nhà.
-Ăn uống: Cơm công ty, ăn trưa ở ngoài, ăn uống ít hơn 50000.
+Ăn ngoài: Cơm công ty, ăn trưa ở ngoài.
 Hóa đơn: Điện, nước, internet, gas, điện thoại.
 Đi chợ siêu thị: Chi phí mua thực phẩm để nấu ăn tại nhà, quần áo cơ bản cho công việc, các vật dụng gia đình cần thiết.
 Di chuyển: Xăng xe, vé xe buýt, chi phí bảo dưỡng xe cộ.
 Sức khỏe: Thuốc men cơ bản, bảo hiểm y tế.
 2. Hưởng thụ:
 Giải trí: Xem phim, đi cà phê, tham dự buổi hòa nhạc.
-Ăn ngoài: Thưởng thức bữa ăn tại nhà hàng sang trọng, thử món mới.
+Thức uống: Thưởng thức trà sữa, trà bí đao, cà phê..., những loại nước uống ngoại trừ nước lọc nước suối nước khoáng.
+Nhà hàng: Thưởng thức bữa ăn tại nhà hàng sang trọng, thử món mới.
 Mua sắm: Mua một món đồ xa xỉ mà bạn yêu thích (quần áo, phụ kiện, đồ công nghệ).
 Chăm sóc bản thân: Đi spa, massage, làm tóc.
 Du lịch: Những chuyến đi ngắn ngày hoặc góp vào một kỳ nghỉ dài hơn.

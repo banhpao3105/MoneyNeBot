@@ -191,8 +191,8 @@ function doPost(e) {
 
   // Cấu trúc nhãn con cho từng hũ
   var subCategories = {
-    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn uống', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
-    'Hưởng thụ': ['Giải trí', 'Ăn ngoài', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
+    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+    'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
     'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
     'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
     'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
@@ -949,8 +949,8 @@ function testSubCategoryKeyboard() {
   ];
 
   var subCategories = {
-    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn uống', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
-    'Hưởng thụ': ['Giải trí', 'Ăn ngoài', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
+    'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
+    'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
     'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
     'Giáo dục': ['Sách', 'Khóa học', 'Sự kiện'],
     'Tự do tài chính': ['Đầu tư', 'Kinh doanh', 'Bất động sản', 'Gửi tiết kiệm sinh lời'],
