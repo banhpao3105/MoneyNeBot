@@ -207,6 +207,33 @@ function sendText(chatId, text, keyBoard) {
   UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
 }
 
+// Function để edit tin nhắn hiện tại thay vì gửi tin nhắn mới
+function editText(chatId, messageId, text, keyBoard) {
+  var formattedText = formatNumberWithSeparator(text);
+  var data = {
+    method: "post",
+    payload: {
+      method: "editMessageText",
+      chat_id: String(chatId),
+      message_id: String(messageId),
+      text: formattedText,
+      parse_mode: "HTML",
+      reply_markup: JSON.stringify(keyBoard)
+    }
+  };
+  
+  try {
+    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
+    Logger.log("DEBUG: Message edited successfully");
+    return true;
+  } catch (error) {
+    Logger.log("DEBUG: Failed to edit message: " + error.toString());
+    // Fallback: gửi tin nhắn mới nếu không edit được
+    sendText(chatId, text, keyBoard);
+    return false;
+  }
+}
+
 var keyBoard = {
   "inline_keyboard": [
     [
@@ -283,9 +310,11 @@ function doPost(e) {
     chatId = contents.callback_query.from.id;
     userName = contents.callback_query.from.first_name;
     var data = contents.callback_query.data;
+    var messageId = contents.callback_query.message.message_id;
     
     Logger.log("CALLBACK QUERY DETECTED:");
     Logger.log("Chat ID: " + chatId);
+    Logger.log("Message ID: " + messageId);
     Logger.log("Callback data: " + data);
 
     if (data === 'connect_email') {
@@ -338,7 +367,7 @@ function doPost(e) {
         var typeText = tempTransaction.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
         var editKeyboard = createEditKeyboard(transactionId);
         
-        sendText(chatId, 
+        editText(chatId, messageId,
           "✅ Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
           " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
           " vào hũ " + allocation + " với nhãn " + subCategory,
@@ -365,7 +394,7 @@ function doPost(e) {
           Logger.log("Keyboard row " + (i+1) + ": " + JSON.stringify(row));
         }
         
-        sendText(chatId, 
+        editText(chatId, messageId,
           "🔄 Chỉnh sửa giao dịch: " + transactionInfo.description + 
           " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
           "\n\nVui lòng chọn hũ mới:",
@@ -374,7 +403,7 @@ function doPost(e) {
         Logger.log("DEBUG: Edit message sent");
       } else {
         Logger.log("DEBUG: No transaction info found in cache");
-        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
       }
       return;
     } else if (data.startsWith('edit_allocation_') || data.startsWith('edit_alloc_')) {
@@ -423,7 +452,7 @@ function doPost(e) {
         
         // Hiển thị keyboard chọn nhãn con cho edit
         var keyboard = createSubCategoryKeyboard(allocation, true, transactionInfo.transactionId, allocationIndex);
-        sendText(chatId, 
+        editText(chatId, messageId,
           "Đã chọn hũ: " + allocation + 
           "\nVui lòng chọn nhãn cụ thể:",
           keyboard
@@ -431,7 +460,7 @@ function doPost(e) {
         Logger.log("DEBUG: Subcategory keyboard sent");
       } else {
         Logger.log("DEBUG: No transaction info found for edit_allocation");
-        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
       }
       return;
     } else if (data.startsWith('edit_subcategory_') || data.startsWith('edit_sub_')) {
@@ -497,7 +526,7 @@ function doPost(e) {
         var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
         var editKeyboard = createEditKeyboard(transactionInfo.transactionId);
         
-        sendText(chatId, 
+        editText(chatId, messageId,
           "✅ Đã cập nhật " + typeText + ": " + transactionInfo.description + 
           " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
           " vào hũ " + allocation + " với nhãn " + subCategory,
@@ -506,7 +535,7 @@ function doPost(e) {
         Logger.log("DEBUG: Success message with edit button sent");
       } else {
         Logger.log("DEBUG: No transaction info found for edit_subcategory");
-        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
       }
       return;
     } else if (data.startsWith('allocation_')) {
@@ -532,7 +561,7 @@ function doPost(e) {
         
         // Hiển thị keyboard chọn nhãn con
         var keyboard = createSubCategoryKeyboard(allocation, false, null, null);
-        sendText(chatId, 
+        editText(chatId, messageId,
           (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
           tempTransaction.description + " " + 
           formatNumberWithSeparator(tempTransaction.amount) + " vào hũ " + allocation + 
@@ -542,7 +571,7 @@ function doPost(e) {
         Logger.log("DEBUG: Subcategory keyboard sent for new transaction");
       } else {
         Logger.log("DEBUG: No temp transaction found for allocation selection");
-        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.", null);
       }
       return;
     } else if (data === 'back_to_allocation') {
@@ -556,7 +585,7 @@ function doPost(e) {
       if (tempTransaction) {
         // Hiển thị lại keyboard chọn hũ
         var keyboard = createAllocationKeyboard(null); // Không có transactionId cho transaction mới
-        sendText(chatId, 
+        editText(chatId, messageId,
           "🔄 Quay lại chọn hũ\n" +
           (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
           tempTransaction.description + " " + 
@@ -567,7 +596,7 @@ function doPost(e) {
         Logger.log("DEBUG: Back to allocation keyboard sent");
       } else {
         Logger.log("DEBUG: No temp transaction found for back_to_allocation");
-        sendText(chatId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.", null);
       }
       return;
     } else {
@@ -603,9 +632,11 @@ function doPost(e) {
   if (contents.callback_query) {
     var id_callback = chatId;
     var data = contents.callback_query.data;
+    var messageId = contents.callback_query.message.message_id;
     
     Logger.log("SECOND CALLBACK BLOCK:");
     Logger.log("Chat ID: " + id_callback);
+    Logger.log("Message ID: " + messageId);
     Logger.log("Callback data: " + data);
 
     if (data === 'totalchi') {
@@ -2586,6 +2617,41 @@ function debugAllocationAfterBack() {
   }
   
   Logger.log("=== DEBUG ALLOCATION AFTER BACK COMPLETED ===");
+}
+
+// Test function để test edit message functionality
+function testEditMessage() {
+  Logger.log("=== TEST EDIT MESSAGE FUNCTIONALITY ===");
+  
+  var testChatId = 123456789;
+  var testMessageId = 999999; // Fake message ID for testing
+  
+  try {
+    // 1. Test edit text without keyboard
+    Logger.log("1. Testing editText without keyboard");
+    var result1 = editText(testChatId, testMessageId, "Test message 1: Đây là test edit text", null);
+    Logger.log("  editText result: " + result1);
+    
+    // 2. Test edit text with keyboard
+    Logger.log("2. Testing editText with keyboard");
+    var testKeyboard = createAllocationKeyboard(null);
+    var result2 = editText(testChatId, testMessageId, "Test message 2: Với keyboard chọn hũ", testKeyboard);
+    Logger.log("  editText with keyboard result: " + result2);
+    
+    // 3. Test format validation
+    Logger.log("3. Testing formatNumberWithSeparator integration");
+    var testText = "Chi tiêu: abc 50000 vào hũ test";
+    var result3 = editText(testChatId, testMessageId, testText, null);
+    Logger.log("  Text with number formatting result: " + result3);
+    
+    Logger.log("✅ Edit message functionality test completed");
+    Logger.log("Note: Actual edit calls may fail with fake messageId, but function structure is tested");
+    
+  } catch (error) {
+    Logger.log("❌ Error in edit message test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST EDIT MESSAGE FUNCTIONALITY COMPLETED ===");
 }
 
 // Hàm test simulate nhấn nút chỉnh sửa
