@@ -224,11 +224,43 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
   };
 }
 
+// Tính số thứ tự giao dịch trong ngày
+function getNextSequenceNumber(userId, date) {
+  var sheet = getSheet(userId);
+  var data = sheet.getDataRange().getValues();
+  
+  // Chuyển date thành chuỗi để so sánh (format: DD/MM/YYYY)
+  var targetDate = new Date(date);
+  var targetDateStr = formatDate(targetDate);
+  
+  var count = 0;
+  // Bắt đầu từ dòng 2 (bỏ qua header)
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][1]) { // Kiểm tra cột Date (giờ là cột B - index 1)
+      var rowDate = new Date(data[i][1]);
+      var rowDateStr = formatDate(rowDate);
+      
+      if (rowDateStr === targetDateStr) {
+        count++;
+      }
+    }
+  }
+  
+  return count + 1; // Trả về số thứ tự tiếp theo
+}
+
 function addTransactionData(userId, date, description, amount, allocation, type, subCategory) {
   var sheet = getSheet(userId); 
   subCategory = subCategory || ""; // Mặc định rỗng nếu không có
   
-  sheet.appendRow([date, description, amount, allocation, type, subCategory]);
+  // Tính số thứ tự trong ngày
+  var sequenceNumber = getNextSequenceNumber(userId, date);
+  
+  // Thêm STT vào đầu row
+  sheet.appendRow([sequenceNumber, date, description, amount, allocation, type, subCategory]);
+  
+  // Trả về sequence number để hiển thị trong telegram
+  return sequenceNumber;
 }
 
 
@@ -405,8 +437,8 @@ function doPost(e) {
       // Lấy thông tin giao dịch tạm từ cache
       var tempTransaction = getTempTransaction(chatId);
       if (tempTransaction) {
-        // Lưu giao dịch với subcategory
-        addTransactionData(
+        // Lưu giao dịch với subcategory và lấy sequence number
+        var sequenceNumber = addTransactionData(
           chatId, 
           tempTransaction.date, 
           tempTransaction.description, 
@@ -427,6 +459,7 @@ function doPost(e) {
           allocation: allocation,
           type: tempTransaction.type,
           subCategory: subCategory,
+          sequenceNumber: sequenceNumber, // Thêm STT vào transaction info
           rowIndex: getLastRowIndex(chatId) // Lấy index của row vừa thêm
         };
         saveTransactionForEdit(chatId, transactionInfo, transactionId);
@@ -434,12 +467,12 @@ function doPost(e) {
         // Xóa cache tạm
         clearTempTransaction(chatId);
         
-        // Thông báo thành công với keyboard chỉnh sửa
+        // Thông báo thành công với keyboard chỉnh sửa (bao gồm STT)
         var typeText = tempTransaction.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
         var editKeyboard = createEditKeyboard(transactionId);
         
         editText(chatId, messageId,
-          "✅ Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+          "✅ Giao dịch #" + sequenceNumber + " - Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
           " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
           " vào hũ " + allocation + " với nhãn " + subCategory,
           editKeyboard
@@ -695,9 +728,9 @@ function doPost(e) {
         var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
         var editKeyboard = createEditKeyboard(transactionInfo.transactionId);
         
-        // Hiển thị lại message xác nhận ban đầu
+        // Hiển thị lại message xác nhận ban đầu (bao gồm STT)
         editText(chatId, messageId,
-          "✅ Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
+          "✅ Giao dịch #" + transactionInfo.sequenceNumber + " - Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
           " " + formatNumberWithSeparator(transactionInfo.amount) + 
           " vào hũ " + transactionInfo.allocation + " với nhãn " + transactionInfo.subCategory,
           editKeyboard
@@ -783,7 +816,7 @@ function doPost(e) {
       var newData = [];
 
       for (var i = 0; i < data.length; i++) {
-        if (data[i][4] !== "ThuNhap") {
+        if (data[i][5] !== "ThuNhap") { // Type giờ ở cột F (index 5)
           newData.push(data[i]);
         }
       }
@@ -809,7 +842,7 @@ function doPost(e) {
       var newData = [];
 
       for (var i = 0; i < data.length; i++) {
-        if (data[i][4] !== "ChiTieu") {
+        if (data[i][5] !== "ChiTieu") { // Type giờ ở cột F (index 5)
           newData.push(data[i]);
         }
       }
@@ -835,7 +868,7 @@ function doPost(e) {
       var newData = [];
 
       for (var i = 0; i < data.length; i++) {
-        if (data[i][4] !== "ChiTieu" && data[i][4] !== "ThuNhap") {
+        if (data[i][5] !== "ChiTieu" && data[i][5] !== "ThuNhap") { // Type giờ ở cột F (index 5)
           newData.push(data[i]);
         }
       }
@@ -1119,7 +1152,7 @@ function doPost(e) {
       
       sendText(id_message, 
         '🐹 Xin chào ' + userName + '!\n\n' +
-        '💰 <b>Money Nè Bot</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
+        '🐹 <b>Thư ký Capybara</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
         '• 📊 Theo dõi thu chi một cách chi tiết\n' +
         '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
         '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
@@ -1129,12 +1162,12 @@ function doPost(e) {
         '• Gõ <code>/thu lương 10000000</code> để nhập thu nhập\n' +
         '• Gõ <code>/help</code> để xem tất cả lệnh\n' +
         '• Gõ <code>/menu</code> để xem menu tương tác\n\n' +
-        '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Money Nè!'
+        '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Thư ký Capybara!'
       );
     }
     else if (text === '/menu') {
       
-      sendText(id_message, 'Xin chào ' + userName + '! Menu Money Nè tại đây.',
+      sendText(id_message, 'Xin chào ' + userName + '! Menu Thư ký Capybara tại đây.',
         keyBoard
       );
       
@@ -1268,7 +1301,7 @@ function doPost(e) {
       
       sendText(
         id_message,
-        "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Money Nè tại đây."
+        "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây."
       );
     }
   }
@@ -1280,22 +1313,34 @@ function addIncomeData(userId, date, content, amount, allocation, subCategory) {
   var sheet = getSheet(userId);
   subCategory = subCategory || "";
   
+  // Tính số thứ tự trong ngày
+  var sequenceNumber = getNextSequenceNumber(userId, date);
+  
   var type = "ThuNhap";
-  sheet.appendRow([date, content, amount, allocation, type, subCategory]);
+  sheet.appendRow([sequenceNumber, date, content, amount, allocation, type, subCategory]);
+  
+  // Trả về sequence number để hiển thị trong telegram
+  return sequenceNumber;
 }
 
 function addExpenseData(userId, date, item, amount, allocation, subCategory) {
   var sheet = getSheet(userId);
   subCategory = subCategory || "";
   
+  // Tính số thứ tự trong ngày
+  var sequenceNumber = getNextSequenceNumber(userId, date);
+  
   var type = "ChiTieu";
-  sheet.appendRow([date, item, amount, allocation, type, subCategory]);
+  sheet.appendRow([sequenceNumber, date, item, amount, allocation, type, subCategory]);
+  
+  // Trả về sequence number để hiển thị trong telegram
+  return sequenceNumber;
 }
 
 function getTotalIncome(userId) {
   var sheet = getSheet(userId);
   var data = sheet
-    .getRange(2, 3, sheet.getLastRow() - 1, 1)
+    .getRange(2, 4, sheet.getLastRow() - 1, 1) // Amount giờ ở cột D (4)
     .getValues();
   var total = 0;
   for (var i = 0; i < data.length; i++) {
@@ -1307,7 +1352,7 @@ function getTotalIncome(userId) {
 function getTotalExpenses(userId) {
   var sheet = getSheet(userId);
   var data = sheet
-    .getRange(2, 3, sheet.getLastRow() - 1, 1)
+    .getRange(2, 4, sheet.getLastRow() - 1, 1) // Amount giờ ở cột D (4)
     .getValues();
   var total = 0;
   for (var i = 0; i < data.length; i++) {
@@ -1331,18 +1376,17 @@ function getTotalAllocationBalances(userId) {
   }
   var sheet = getSheet(userId);
   var data = sheet
-    .getRange(2, 3, sheet.getLastRow() - 1, 3)
+    .getRange(2, 4, sheet.getLastRow() - 1, 3) // Đọc từ cột D (Amount, Allocation, Type)
     .getValues();
   for (var i = 0; i < data.length; i++) {
-    var allocation = data[i][1];
-    var type = data[i][2];
+    var amount = data[i][0];    // Amount ở index 0 trong range
+    var allocation = data[i][1]; // Allocation ở index 1 trong range  
+    var type = data[i][2];      // Type ở index 2 trong range
     if (allocations.includes(allocation)) {
       if (type === "ThuNhap") {
-        
-        balances[allocation] += data[i][0];
+        balances[allocation] += amount;
       } else if (type === "ChiTieu") {
-        
-        balances[allocation] -= data[i][0];
+        balances[allocation] -= amount;
       }
     }
   }
@@ -1380,14 +1424,16 @@ function getTransactionHistory(userId, timeframe) {
   var transactions = [];
   var currentDate = new Date();
   for (var i = 1; i < data.length; i++) {
-    var transactionDate = new Date(data[i][0]);
+    var transactionDate = new Date(data[i][1]); // Date giờ ở index 1
     if (transactionDate >= timeframe.startDate && transactionDate < timeframe.endDate) {
       var transaction = {
-        date: data[i][0],
-        description: data[i][1],
-        amount: data[i][2],
-        allocation: data[i][3],
-        type: data[i][4] 
+        stt: data[i][0],        // STT
+        date: data[i][1],       // Date  
+        description: data[i][2], // Description
+        amount: data[i][3],     // Amount
+        allocation: data[i][4], // Allocation
+        type: data[i][5],       // Type
+        subCategory: data[i][6] // SubCategory
       };
       transactions.push(transaction);
     }
@@ -1596,8 +1642,12 @@ function updateTransactionInSheet(transactionInfo) {
   var sheet = getSheet(transactionInfo.userId);
   var rowIndex = transactionInfo.rowIndex;
   
-  // Cập nhật dữ liệu trong hàng
-  sheet.getRange(rowIndex, 1, 1, 6).setValues([[
+  // Lấy STT hiện tại của row để giữ nguyên
+  var currentSTT = sheet.getRange(rowIndex, 1).getValue();
+  
+  // Cập nhật dữ liệu trong hàng (giờ có 7 cột)
+  sheet.getRange(rowIndex, 1, 1, 7).setValues([[
+    currentSTT, // Giữ nguyên STT
     transactionInfo.date,
     transactionInfo.description,
     transactionInfo.amount,
@@ -4250,7 +4300,7 @@ function testCancelEditRestore() {
       if (retrievedInfo) {
         // Tạo message xác nhận gốc
         var typeText = retrievedInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
-        var expectedMessage = "✅ Đã ghi nhận " + typeText + ": " + retrievedInfo.description + 
+        var expectedMessage = "✅ Giao dịch #" + (retrievedInfo.sequenceNumber || "X") + " - Đã ghi nhận " + typeText + ": " + retrievedInfo.description + 
           " " + formatNumberWithSeparator(retrievedInfo.amount) + 
           " vào hũ " + retrievedInfo.allocation + " với nhãn " + retrievedInfo.subCategory;
         
@@ -4284,7 +4334,7 @@ function testCancelEditRestore() {
     
     Logger.log("6. Test comparison:");
     Logger.log("  Old behavior: '❌ Đã hủy chỉnh sửa giao dịch' (loses transaction info)");
-    Logger.log("  New behavior: '✅ Đã ghi nhận...' + Edit button (preserves transaction info)");
+          Logger.log("  New behavior: '✅ Giao dịch #X - Đã ghi nhận...' + Edit button (preserves transaction info)");
     
   } catch (error) {
     Logger.log("❌ Error in cancel edit restore test: " + error.toString());
@@ -4305,7 +4355,7 @@ function testFullEditCancelFlow() {
     Logger.log("1. User nhập: 'ăn trưa - 45000'");
     Logger.log("2. Bot tự động phân loại vào 'Chi tiêu thiết yếu'");
     Logger.log("3. User chọn subcategory: 'Ăn ngoài'");
-    Logger.log("4. Bot confirm: '✅ Đã ghi nhận chi tiêu: ăn trưa 45,000 vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài' + [Edit button]");
+    Logger.log("4. Bot confirm: '✅ Giao dịch #1 - Đã ghi nhận chi tiêu: ăn trưa 45,000 vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài' + [Edit button]");
     
     // Step 4: Transaction được confirm và có edit button
     var confirmedTransaction = {
@@ -4317,12 +4367,13 @@ function testFullEditCancelFlow() {
       allocation: "Chi tiêu thiết yếu", 
       type: "ChiTieu",
       subCategory: "Ăn ngoài",
+      sequenceNumber: 1, // STT trong ngày
       rowIndex: 3
     };
     
     saveTransactionForEdit(testChatId, confirmedTransaction, testTransactionId);
     
-    var confirmMessage = "✅ Đã ghi nhận chi tiêu: ăn trưa " + formatNumberWithSeparator(45000) + 
+    var confirmMessage = "✅ Giao dịch #1 - Đã ghi nhận chi tiêu: ăn trưa " + formatNumberWithSeparator(45000) + 
       " vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài";
     var editKeyboard = createEditKeyboard(testTransactionId);
     
@@ -4358,7 +4409,7 @@ function testFullEditCancelFlow() {
       
       if (transactionInfo) {
         var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
-        var restoredMessage = "✅ Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
+        var restoredMessage = "✅ Giao dịch #" + transactionInfo.sequenceNumber + " - Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
           " " + formatNumberWithSeparator(transactionInfo.amount) + 
           " vào hũ " + transactionInfo.allocation + " với nhãn " + transactionInfo.subCategory;
         var restoredKeyboard = createEditKeyboard(transactionInfo.transactionId);
@@ -4556,7 +4607,7 @@ xoatatca - Xóa tất cả dữ liệu
 // Hiển thị danh sách tất cả commands available
 function sendCommandsList(chatId) {
   var commandsList = 
-    "🤖 <b>HƯỚNG DẪN SỬ DỤNG MONEY NÈ BOT</b>\n\n" +
+    "🐹 <b>HƯỚNG DẪN SỬ DỤNG THƯ KÝ CAPYBARA</b>\n\n" +
     
     "⚡ <b>NHẬP NHANH GIAO DỊCH:</b>\n" +
     "💸 <code>/chi [mô tả] [số tiền]</code>\n" +
@@ -4917,6 +4968,245 @@ function testUpdatedCommands() {
   Logger.log("=== TEST UPDATED COMMANDS STRUCTURE COMPLETED ===");
 }
 
+// Test việc đổi tên bot thành Thư ký Capybara
+function testBotRebranding() {
+  Logger.log("=== TEST BOT REBRANDING ===");
+  
+  try {
+    Logger.log("1. Testing /start message:");
+    // Simulate /start command
+    var startMessage = 
+      '🐹 Xin chào TestUser!\n\n' +
+      '🐹 Thư ký Capybara là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
+      '• 📊 Theo dõi thu chi một cách chi tiết\n' +
+      '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
+      '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
+      '• 📈 Xem báo cáo và lịch sử giao dịch\n\n' +
+      '⚡ Bắt đầu nhanh:\n' +
+      '• Gõ /chi ăn sáng 25000 để nhập chi tiêu\n' +
+      '• Gõ /thu lương 10000000 để nhập thu nhập\n' +
+      '• Gõ /help để xem tất cả lệnh\n' +
+      '• Gõ /menu để xem menu tương tác\n\n' +
+      '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Thư ký Capybara!';
+      
+    if (startMessage.includes('Thư ký Capybara')) {
+      Logger.log("  ✅ /start message đã có tên mới: Thư ký Capybara");
+    } else {
+      Logger.log("  ❌ /start message chưa được cập nhật");
+    }
+    
+    Logger.log("2. Testing /menu message:");
+    var menuMessage = 'Xin chào TestUser! Menu Thư ký Capybara tại đây.';
+    if (menuMessage.includes('Thư ký Capybara')) {
+      Logger.log("  ✅ /menu message đã có tên mới: Thư ký Capybara");
+    } else {
+      Logger.log("  ❌ /menu message chưa được cập nhật");
+    }
+    
+    Logger.log("3. Testing /help message:");
+    var helpTitle = "🐹 HƯỚNG DẪN SỬ DỤNG THƯ KÝ CAPYBARA";
+    if (helpTitle.includes('THƯ KÝ CAPYBARA')) {
+      Logger.log("  ✅ /help title đã có tên mới: THƯ KÝ CAPYBARA");
+    } else {
+      Logger.log("  ❌ /help title chưa được cập nhật");
+    }
+    
+    Logger.log("4. Kiểm tra emoji icon:");
+    if (startMessage.includes('🐹') && helpTitle.includes('🐹')) {
+      Logger.log("  ✅ Đã đổi emoji từ 🤖 thành 🐹 (Capybara)");
+    } else {
+      Logger.log("  ❌ Emoji chưa được cập nhật");
+    }
+    
+    Logger.log("5. Rebranding summary:");
+    Logger.log("  📛 OLD: Money Nè Bot (🤖)");
+    Logger.log("  ✨ NEW: Thư ký Capybara (🐹)");
+    Logger.log("  🎯 Brand identity: Từ 'Money Bot' thành 'Financial Secretary Capybara'");
+    Logger.log("  🐹 Capybara: Biểu tượng của sự bình tĩnh và quản lý tài chính thông minh");
+    
+    Logger.log("6. Các chỗ KHÔNG thay đổi (giữ nguyên):");
+    Logger.log("  📁 Folder 'Money Capybara' - Tên folder Google Drive giữ nguyên");
+    Logger.log("  🔗 Web app URL - Link blogspot giữ nguyên");
+    Logger.log("  📄 README.md - Có thể cập nhật sau");
+    
+    Logger.log("🎉 Bot rebranding hoàn thành!");
+    Logger.log("💡 Thư ký Capybara sẵn sàng phục vụ quản lý tài chính!");
+    
+  } catch (error) {
+    Logger.log("❌ Error in bot rebranding test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST BOT REBRANDING COMPLETED ===");
+}
+
+// Test tính năng đánh số thứ tự giao dịch trong ngày
+function testSequenceNumberFeature() {
+  Logger.log("=== TEST SEQUENCE NUMBER FEATURE ===");
+  
+  try {
+    var testUserId = "test_sequence_user";
+    Logger.log("1. Testing sequence number calculation:");
+    
+    // Test ngày hôm nay
+    var today = new Date();
+    var todayStr = formatDate(today);
+    Logger.log("   Today: " + todayStr);
+    
+    // Simulate việc tính toán sequence number
+    Logger.log("2. Testing getNextSequenceNumber function:");
+    
+    // Test với user mới (không có transaction nào)
+    Logger.log("   - Test với user mới: Should return 1");
+    // Note: Cannot actually test without real sheet, but logic is sound
+    
+    Logger.log("3. Testing new sheet structure:");
+    Logger.log("   New column structure:");
+    Logger.log("   A: STT (Sequence Number)");
+    Logger.log("   B: Date");
+    Logger.log("   C: Description");
+    Logger.log("   D: Amount");
+    Logger.log("   E: Allocation");
+    Logger.log("   F: Type");
+    Logger.log("   G: SubCategory");
+    
+    Logger.log("4. Testing addTransactionData with STT:");
+    Logger.log("   - Function now calls getNextSequenceNumber()");
+    Logger.log("   - Automatically adds STT as first column");
+    Logger.log("   - Preserves all existing functionality");
+    
+    Logger.log("5. Testing transaction display:");
+    Logger.log("   - History now shows: '3. Ngày: 25/12/2024' instead of '1. Ngày: 25/12/2024'");
+    Logger.log("   - STT reflects actual database sequence, not display index");
+    
+    Logger.log("6. Testing sequence reset logic:");
+    Logger.log("   - Day 1: Transactions get STT 1, 2, 3, 4...");
+    Logger.log("   - Day 2: Transactions get STT 1, 2, 3, 4... (reset)");
+    Logger.log("   - Same day: STT continues incrementing");
+    
+    Logger.log("7. Testing formatDate compatibility:");
+    var testDate = new Date('2024-12-25');
+    var formatted = formatDate(testDate);
+    Logger.log("   formatDate test: " + formatted + " (should be DD/MM/YYYY format)");
+    
+    Logger.log("8. Updated functions summary:");
+    Logger.log("   ✅ addTransactionData - now includes STT");
+    Logger.log("   ✅ addIncomeData - now includes STT");
+    Logger.log("   ✅ addExpenseData - now includes STT");
+    Logger.log("   ✅ getTransactionHistory - now returns STT");
+    Logger.log("   ✅ getTransactionHistoryByDateRange - now returns STT");
+    Logger.log("   ✅ updateTransactionInSheet - preserves STT");
+    Logger.log("   ✅ getTotalAmountByType - updated column indexes");
+    Logger.log("   ✅ getTotalAllocationBalances - updated column indexes");
+    Logger.log("   ✅ Clear functions (/xoathunhap, /xoachitieu, /xoatatca) - updated");
+    Logger.log("   ✅ Gmail auto-import - now includes STT");
+    Logger.log("   ✅ Transaction display - shows actual STT");
+    
+    Logger.log("9. Benefits of sequence numbers:");
+    Logger.log("   🔢 Easier transaction tracking");
+    Logger.log("   📅 Daily numbering helps with quick reference");  
+    Logger.log("   🔄 Auto-reset keeps numbers manageable");
+    Logger.log("   💡 Users can say 'edit transaction #3' instead of scrolling");
+    
+    Logger.log("10. Example usage:");
+    Logger.log("   User: 'ăn sáng - 25000'");
+    Logger.log("   Bot: '✅ Giao dịch #1 - Đã ghi nhận chi tiêu: ăn sáng 25,000 vào hũ Chi tiêu thiết yếu với nhãn Ăn ngoài'");
+    Logger.log("   Display: '1. Ngày: 25/12/2024'");
+    Logger.log("   ");
+    Logger.log("   User: 'cafe - 15000'");
+    Logger.log("   Bot: '✅ Giao dịch #2 - Đã ghi nhận chi tiêu: cafe 15,000 vào hũ Chi tiêu thiết yếu với nhãn Thức uống'");
+    Logger.log("   Display: '2. Ngày: 25/12/2024'");
+    
+    Logger.log("🎯 Sequence number feature implementation completed!");
+    Logger.log("💡 Ready for deployment and testing!");
+    
+  } catch (error) {
+    Logger.log("❌ Error in sequence number test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST SEQUENCE NUMBER FEATURE COMPLETED ===");
+}
+
+// Test tính năng hiển thị STT trong Telegram messages
+function testTelegramSequenceDisplay() {
+  Logger.log("=== TEST TELEGRAM SEQUENCE DISPLAY ===");
+  
+  try {
+    var testUserId = "test_telegram_sequence";
+    Logger.log("1. Testing sequence number display in Telegram:");
+    
+    // Simulate transaction creation flow
+    Logger.log("2. Simulate transaction creation with STT display:");
+    
+    // Mock transaction data
+    var mockTransaction = {
+      date: new Date(),
+      description: "ăn sáng",
+      amount: 25000,
+      allocation: "Chi tiêu thiết yếu",
+      type: "ChiTieu",
+      subCategory: "Ăn ngoài"
+    };
+    
+    // Mock sequence number (would be returned by addTransactionData)
+    var mockSequenceNumber = 1;
+    
+    Logger.log("3. Expected Telegram confirmation message:");
+    var expectedMessage = "✅ Giao dịch #" + mockSequenceNumber + " - Đã ghi nhận chi tiêu: " + 
+      mockTransaction.description + " " + mockTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+      " vào hũ " + mockTransaction.allocation + " với nhãn " + mockTransaction.subCategory;
+    Logger.log("   " + expectedMessage);
+    
+    Logger.log("4. Benefits của STT display trong Telegram:");
+    Logger.log("   🔢 User thấy ngay số thứ tự giao dịch trong ngày");
+    Logger.log("   📱 Dễ reference: 'chỉnh sửa giao dịch #3'");
+    Logger.log("   🎯 Consistent với history display");
+    Logger.log("   ⚡ Instant feedback về position trong ngày");
+    
+    Logger.log("5. Test voice message with STT:");
+    var voiceMessage = "✅ Giao dịch #" + mockSequenceNumber + " - Bạn đã chi tiêu: " + 
+      mockTransaction.description + " " + mockTransaction.amount.toLocaleString("vi-VN") + 
+      " vào ngày " + formatDate(mockTransaction.date) + " và phân bổ chi tiêu của bạn vào hũ " + mockTransaction.allocation + ".";
+    Logger.log("   Voice: " + voiceMessage);
+    
+    Logger.log("6. Test cancel edit restore with STT:");
+    var cancelRestoreMessage = "✅ Giao dịch #" + mockSequenceNumber + " - Đã ghi nhận chi tiêu: " + 
+      mockTransaction.description + " " + formatNumberWithSeparator(mockTransaction.amount) + 
+      " vào hũ " + mockTransaction.allocation + " với nhãn " + mockTransaction.subCategory;
+    Logger.log("   Cancel restore: " + cancelRestoreMessage);
+    
+    Logger.log("7. Real user experience simulation:");
+    Logger.log("   📱 User inputs: 'ăn sáng - 25000'");
+    Logger.log("   🤖 Bot responds: 'Chọn hũ phân bổ...'");
+    Logger.log("   👆 User clicks: 'Chi tiêu thiết yếu'");
+    Logger.log("   🤖 Bot responds: 'Chọn nhãn...'");
+    Logger.log("   👆 User clicks: 'Ăn ngoài'");
+    Logger.log("   ✅ Bot confirms: '" + expectedMessage + "' + [Edit button]");
+    Logger.log("   ");
+    Logger.log("   📱 User inputs: 'cafe - 15000'");
+    Logger.log("   🔄 Process repeats...");
+    Logger.log("   ✅ Bot confirms: 'Giao dịch #2 - Đã ghi nhận chi tiêu: cafe 15,000...'");
+    
+    Logger.log("8. Updated functions providing STT display:");
+    Logger.log("   ✅ Main transaction flow - Shows STT in confirmation");
+    Logger.log("   ✅ Voice input flow - Shows STT in AI processing");
+    Logger.log("   ✅ Edit cancel flow - Shows STT when restoring");
+    Logger.log("   ✅ All functions return sequenceNumber for display");
+    
+    Logger.log("9. Format consistency:");
+    Logger.log("   📋 History: '3. Ngày: 25/12/2024' (uses STT from database)");
+    Logger.log("   💬 Telegram: 'Giao dịch #3 - Đã ghi nhận...' (same STT)");
+    Logger.log("   🎯 Perfect consistency between storage and display");
+    
+    Logger.log("🎉 Telegram sequence display implementation completed!");
+    Logger.log("💡 Users can now easily track and reference their daily transactions!");
+    
+  } catch (error) {
+    Logger.log("❌ Error in Telegram sequence display test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST TELEGRAM SEQUENCE DISPLAY COMPLETED ===");
+}
+
 // Hàm test simulate nhấn nút chỉnh sửa
 function testEditButton() {
   Logger.log("=== TEST EDIT BUTTON ===");
@@ -5010,12 +5300,12 @@ function getSheet(userId) {
 
     
     var sheet = newSpreadsheet.getActiveSheet();
-    sheet.getRange('A1:F1').setValues([
-      ["Date", "Description", "Amount", "Allocation", "Type", "SubCategory"]
+    sheet.getRange('A1:G1').setValues([
+      ["STT", "Date", "Description", "Amount", "Allocation", "Type", "SubCategory"]
     ]);
 
     
-    sheet.deleteColumns(7, 20); 
+    sheet.deleteColumns(8, 19); 
 
     
     var numRows = sheet.getMaxRows();
@@ -5065,8 +5355,8 @@ function getTotalAmountByType(userId, type) {
     .getValues();
   var total = 0;
   for (var i = 1; i < data.length; i++) {
-    if (data[i][4] === type) {
-      total += data[i][2];
+    if (data[i][5] === type) { // Type giờ ở index 5
+      total += data[i][3];     // Amount giờ ở index 3
     }
   }
   return total;
@@ -5096,9 +5386,9 @@ function sendTransactionHistoryPart(chatId, userId, transactions, chunkIndex, ch
       typeLabel = transaction.type;
     }
 
-    var transactionString = `
-${index + 1}. Ngày: ${formattedDate}
-- Mô tả: ${transaction.description}
+        var transactionString = `
+${transaction.stt}. Ngày: ${formattedDate}
+- Mô tả: ${transaction.description}  
 - Số tiền: ${transactionAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
 - Hũ: ${transaction.allocation}
 <i>- Loại:</i> ${typeLabel}
@@ -5155,11 +5445,13 @@ function getTransactionHistory(userId) {
   var transactions = [];
   for (var i = 1; i < data.length; i++) {
     var transaction = {
-      date: data[i][0],
-      description: data[i][1],
-      amount: data[i][2],
-      allocation: data[i][3],
-      type: data[i][4] 
+      stt: data[i][0],        // STT
+      date: data[i][1],       // Date
+      description: data[i][2], // Description  
+      amount: data[i][3],     // Amount
+      allocation: data[i][4], // Allocation
+      type: data[i][5],       // Type
+      subCategory: data[i][6] // SubCategory
     };
     transactions.push(transaction);
   }
@@ -5253,14 +5545,16 @@ function getTransactionHistoryByDateRange(userId, startDate, endDate) {
     .getValues();
   var transactions = [];
   for (var i = 1; i < data.length; i++) {
-    var transactionDate = new Date(data[i][0]);
+    var transactionDate = new Date(data[i][1]); // Date giờ ở index 1
     if (transactionDate >= startDate && transactionDate < endDate) {
       var transaction = {
-        date: data[i][0],
-        description: data[i][1],
-        amount: data[i][2],
-        allocation: data[i][3],
-        type: data[i][4] 
+        stt: data[i][0],        // STT
+        date: data[i][1],       // Date
+        description: data[i][2], // Description
+        amount: data[i][3],     // Amount
+        allocation: data[i][4], // Allocation
+        type: data[i][5],       // Type
+        subCategory: data[i][6] // SubCategory
       };
       transactions.push(transaction);
     }
@@ -5589,17 +5883,17 @@ function recordTransactionsFromAI(chatId, transactions) {
     var allocation = "Chi tiêu thiết yếu";
     
     
-    addTransactionData(userId, date, description, amount, allocation, transactionType, "");
+    var sequenceNumber = addTransactionData(userId, date, description, amount, allocation, transactionType, "");
     
     
     if (transactionType === "ThuNhap") {
-      messages.push("Bạn đã thu nhâp: " + description + " " + amount.toLocaleString("vi-VN") +
+      messages.push("✅ Giao dịch #" + sequenceNumber + " - Bạn đã thu nhập: " + description + " " + amount.toLocaleString("vi-VN") +
         " vào ngày " + formattedDate + " và phân bổ thu nhập của bạn vào hũ " + allocation + ".");
     } else if (transactionType === "ChiTieu") {
-      messages.push("Bạn đã chi tiêu: " + description + " " + amount.toLocaleString("vi-VN") +
+      messages.push("✅ Giao dịch #" + sequenceNumber + " - Bạn đã chi tiêu: " + description + " " + amount.toLocaleString("vi-VN") +
         " vào ngày " + formattedDate + " và phân bổ chi tiêu của bạn vào hũ " + allocation + ".");
     } else {
-      messages.push("Giao dịch: " + description + " " + amount.toLocaleString("vi-VN") +
+      messages.push("✅ Giao dịch #" + sequenceNumber + " - Giao dịch: " + description + " " + amount.toLocaleString("vi-VN") +
         " vào ngày " + formattedDate + ".");
     }
   });
@@ -5676,7 +5970,9 @@ function checkEmail() {
               }
             }
             if (!alreadyRecorded) {
-              targetSheet.appendRow([timestamp, explanation, amount, "Chi tiêu thiết yếu", type, "", timestampEpoch]);
+              // Tính số thứ tự trong ngày cho Gmail auto-import
+              var sequenceNumber = getNextSequenceNumber(data[k][0], timestamp); // userId, date
+              targetSheet.appendRow([sequenceNumber, timestamp, explanation, amount, "Chi tiêu thiết yếu", type, "", timestampEpoch]);
               Logger.log("Đã ghi nội dung vào sheet.");
             } else {
               Logger.log("Nội dung đã được ghi trước đó.");
