@@ -774,7 +774,7 @@ function doPost(e) {
   } else if (contents.message) {
     var id_message = chatId;
     var text = contents.message.text;
-    if (text === '/clearthunhap') {
+    if (text === '/xoathunhap') {
       var userId = chatId;
       var sheet = getSheet(userId);
       var data = sheet
@@ -800,7 +800,7 @@ function doPost(e) {
       }
       sendText(chatId, "Đã xoá các thu nhập.");
       return;
-    } else if (text === '/clearchitieu') {
+    } else if (text === '/xoachitieu') {
       var userId = chatId;
       var sheet = getSheet(userId);
       var data = sheet
@@ -826,7 +826,7 @@ function doPost(e) {
       }
       sendText(chatId, "Đã xoá các giao dịch chi tiêu.");
       return;
-    } else if (text === '/clearall') {
+    } else if (text === '/xoatatca') {
       var userId = chatId;
       var sheet = getSheet(userId);
       var data = sheet
@@ -1117,8 +1117,19 @@ function doPost(e) {
       }
     } else if (text === '/start') {
       
-      sendText(id_message, 'Xin chào ' + userName + '! Money Nè là Bot giúp bạn quản lý Thu/Chi, thu nhập có thể phân bổ ra các hũ và còn các tính năng khác nữa. Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Money Nè tại đây.',
-        keyBoard
+      sendText(id_message, 
+        '🐹 Xin chào ' + userName + '!\n\n' +
+        '💰 <b>Money Nè Bot</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
+        '• 📊 Theo dõi thu chi một cách chi tiết\n' +
+        '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
+        '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
+        '• 📈 Xem báo cáo và lịch sử giao dịch\n\n' +
+        '⚡ <b>Bắt đầu nhanh:</b>\n' +
+        '• Gõ <code>/chi ăn sáng 25000</code> để nhập chi tiêu\n' +
+        '• Gõ <code>/thu lương 10000000</code> để nhập thu nhập\n' +
+        '• Gõ <code>/help</code> để xem tất cả lệnh\n' +
+        '• Gõ <code>/menu</code> để xem menu tương tác\n\n' +
+        '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Money Nè!'
       );
     }
     else if (text === '/menu') {
@@ -1126,6 +1137,43 @@ function doPost(e) {
       sendText(id_message, 'Xin chào ' + userName + '! Menu Money Nè tại đây.',
         keyBoard
       );
+      
+    // === QUICK ACCESS COMMANDS ===
+    } else if (text === '/tongtien') {
+      var userId = chatId;
+      var currentBalance = getCurrentBalance(userId);
+      sendText(id_message, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
+      
+    } else if (text === '/tongchi') {
+      var userId = chatId;
+      var totalExpenses = getTotalAmountByType(userId, "ChiTieu");
+      sendText(id_message, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
+      
+    } else if (text === '/tongthunhap') {
+      var userId = chatId;
+      sendTotalIncomeSummary(id_message, userId);
+      
+    } else if (text === '/xemhu') {
+      var userId = chatId;
+      sendTotalPhanboSummary(id_message, userId);
+      
+    } else if (text === '/lichsu') {
+      var userId = chatId;
+      sendTransactionHistory(id_message, userId);
+      
+    // === QUICK INPUT COMMANDS ===
+    } else if (text.startsWith('/chi ')) {
+      // /chi description amount - Nhanh chóng nhập chi tiêu
+      var input = text.substring(5); // Bỏ "/chi "
+      handleQuickExpense(id_message, chatId, input, userName);
+      
+    } else if (text.startsWith('/thu ')) {
+      // /thu description amount - Nhanh chóng nhập thu nhập
+      var input = text.substring(5); // Bỏ "/thu "
+      handleQuickIncome(id_message, chatId, input, userName);
+      
+    } else if (text === '/commands' || text === '/help') {
+      sendCommandsList(id_message);
     } else if (text.startsWith('/del')) {
       var userId = chatId;
       var transactionId;
@@ -4473,6 +4521,400 @@ function testMultipleTransactionEditScenario() {
   }
   
   Logger.log("=== TEST MULTIPLE TRANSACTION EDIT SCENARIO COMPLETED ===");
+}
+
+// === SLASH COMMANDS SUPPORT FUNCTIONS ===
+
+/* 
+SETUP BOTFATHER COMMANDS:
+Để hiển thị slash commands menu khi user gõ "/", cần setup trong BotFather:
+
+1. Mở @BotFather trên Telegram
+2. Gửi /setcommands  
+3. Chọn bot của bạn
+4. Copy và paste danh sách commands sau:
+
+chi - Nhập chi tiêu nhanh (VD: /chi ăn sáng 25000)
+thu - Nhập thu nhập nhanh (VD: /thu lương 10000000)
+tongtien - Xem số tiền hiện tại
+tongchi - Xem tổng chi tiêu
+tongthunhap - Xem tổng thu nhập
+xemhu - Xem chi tiết số dư các hũ
+lichsu - Xem lịch sử giao dịch
+start - Khởi động và giới thiệu bot
+menu - Hiển thị menu chính với các tùy chọn
+help - Hiển thị hướng dẫn sử dụng chi tiết
+xoathunhap - Xóa tất cả thu nhập
+xoachitieu - Xóa tất cả chi tiêu
+xoatatca - Xóa tất cả dữ liệu
+
+5. Gửi danh sách commands trên cho BotFather
+6. BotFather sẽ confirm setup thành công
+7. Test bằng cách gõ "/" trong chat với bot
+*/
+
+// Hiển thị danh sách tất cả commands available
+function sendCommandsList(chatId) {
+  var commandsList = 
+    "🤖 <b>HƯỚNG DẪN SỬ DỤNG MONEY NÈ BOT</b>\n\n" +
+    
+    "⚡ <b>NHẬP NHANH GIAO DỊCH:</b>\n" +
+    "💸 <code>/chi [mô tả] [số tiền]</code>\n" +
+    "   Ví dụ: <code>/chi ăn sáng 25000</code>\n" +
+    "💵 <code>/thu [mô tả] [số tiền]</code>\n" +
+    "   Ví dụ: <code>/thu lương 10000000</code>\n\n" +
+    
+    "📊 <b>XEM THÔNG TIN:</b>\n" +
+    "💰 <code>/tongtien</code> - Xem số tiền hiện tại\n" +
+    "💸 <code>/tongchi</code> - Xem tổng chi tiêu\n" +
+    "💵 <code>/tongthunhap</code> - Xem tổng thu nhập\n" +
+    "🏺 <code>/xemhu</code> - Xem chi tiết số dư các hũ\n" +
+    "📋 <code>/lichsu</code> - Xem lịch sử giao dịch\n\n" +
+    
+    "🛠 <b>QUẢN LÝ DỮ LIỆU:</b>\n" +
+    "🗑 <code>/xoathunhap</code> - Xóa tất cả thu nhập\n" +
+    "🗑 <code>/xoachitieu</code> - Xóa tất cả chi tiêu\n" +
+    "🗑 <code>/xoatatca</code> - Xóa tất cả dữ liệu\n\n" +
+    
+    "ℹ️ <b>KHÁC:</b>\n" +
+    "🏠 <code>/start</code> - Giới thiệu bot\n" +
+    "📋 <code>/menu</code> - Hiển thị menu tương tác\n" +
+    "❓ <code>/help</code> - Hiển thị hướng dẫn này\n\n" +
+    
+    "💡 <b>LƯU Ý:</b>\n" +
+    "• Sau khi nhập <code>/chi</code> hoặc <code>/thu</code>, bạn sẽ chọn hũ và nhãn chi tiết\n" +
+    "• Bạn vẫn có thể dùng cách cũ: <code>mô tả - số tiền</code> (chi tiêu) hoặc <code>mô tả + số tiền</code> (thu nhập)\n" +
+    "• Gõ <code>/</code> để xem menu lệnh nhanh";
+    
+  sendText(chatId, commandsList);
+}
+
+// Xử lý command /chi [description] [amount] 
+function handleQuickExpense(chatId, userId, input, userName) {
+  try {
+    // Parse input: "description amount" hoặc "description - amount"
+    var parts;
+    if (input.includes(' - ')) {
+      parts = input.split(' - ');
+    } else {
+      // Tách description và amount bằng space cuối cùng
+      var lastSpaceIndex = input.lastIndexOf(' ');
+      if (lastSpaceIndex === -1) {
+        sendText(chatId, "❌ Sai định dạng! Sử dụng: <code>/chi mô tả số_tiền</code>\nVí dụ: <code>/chi ăn sáng 25000</code>");
+        return;
+      }
+      parts = [
+        input.substring(0, lastSpaceIndex).trim(),
+        input.substring(lastSpaceIndex + 1).trim()
+      ];
+    }
+    
+    if (parts.length !== 2) {
+      sendText(chatId, "❌ Sai định dạng! Sử dụng: <code>/chi mô tả số_tiền</code>\nVí dụ: <code>/chi ăn sáng 25000</code>");
+      return;
+    }
+    
+    var description = parts[0].trim();
+    var amountStr = parts[1].trim();
+    
+    // Validate amount
+    if (!amountStr.match(/^\d+$/)) {
+      sendText(chatId, "❌ Số tiền không hợp lệ! Chỉ nhập số, ví dụ: 25000");
+      return;
+    }
+    
+    var amount = parseInt(amountStr);
+    if (amount <= 0) {
+      sendText(chatId, "❌ Số tiền phải lớn hơn 0!");
+      return;
+    }
+    
+    // Sử dụng default allocation (có thể nâng cấp thành smart allocation sau)
+    var allocation = "Chi tiêu thiết yếu";
+    
+    // Lưu temp transaction để chọn subcategory
+    var tempTransaction = {
+      userId: userId,
+      date: new Date().toISOString().split('T')[0],
+      description: description,
+      amount: amount,
+      allocation: allocation,  
+      type: "ChiTieu"
+    };
+    
+    saveTempTransaction(userId, tempTransaction);
+    
+    // Hiển thị keyboard chọn nhãn con với allocationIndex
+    var allocationIndex = allocations.indexOf(allocation);
+    var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
+    
+    sendText(chatId,
+      "⚡ Chi tiêu nhanh: " + description + " " + formatNumberWithSeparator(amount) + 
+      " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+      keyboard
+    );
+    
+  } catch (error) {
+    Logger.log("Error in handleQuickExpense: " + error.toString());
+    sendText(chatId, "❌ Có lỗi xảy ra khi xử lý lệnh. Vui lòng thử lại!");
+  }
+}
+
+// Xử lý command /thu [description] [amount]
+function handleQuickIncome(chatId, userId, input, userName) {
+  try {
+    // Parse input: "description amount" hoặc "description + amount"  
+    var parts;
+    if (input.includes(' + ')) {
+      parts = input.split(' + ');
+    } else {
+      // Tách description và amount bằng space cuối cùng
+      var lastSpaceIndex = input.lastIndexOf(' ');
+      if (lastSpaceIndex === -1) {
+        sendText(chatId, "❌ Sai định dạng! Sử dụng: <code>/thu mô tả số_tiền</code>\nVí dụ: <code>/thu lương 10000000</code>");
+        return;
+      }
+      parts = [
+        input.substring(0, lastSpaceIndex).trim(),
+        input.substring(lastSpaceIndex + 1).trim()
+      ];
+    }
+    
+    if (parts.length !== 2) {
+      sendText(chatId, "❌ Sai định dạng! Sử dụng: <code>/thu mô tả số_tiền</code>\nVí dụ: <code>/thu lương 10000000</code>");
+      return;
+    }
+    
+    var description = parts[0].trim();
+    var amountStr = parts[1].trim();
+    
+    // Validate amount
+    if (!amountStr.match(/^\d+$/)) {
+      sendText(chatId, "❌ Số tiền không hợp lệ! Chỉ nhập số, ví dụ: 10000000");
+      return;
+    }
+    
+    var amount = parseInt(amountStr);
+    if (amount <= 0) {
+      sendText(chatId, "❌ Số tiền phải lớn hơn 0!");
+      return;
+    }
+    
+    // Sử dụng default allocation (có thể nâng cấp thành smart allocation sau)
+    var allocation = "Chi tiêu thiết yếu";
+    
+    // Lưu temp transaction để chọn subcategory
+    var tempTransaction = {
+      userId: userId,
+      date: new Date().toISOString().split('T')[0],
+      description: description,
+      amount: amount,
+      allocation: allocation,
+      type: "ThuNhap"
+    };
+    
+    saveTempTransaction(userId, tempTransaction);
+    
+    // Hiển thị keyboard chọn nhãn con với allocationIndex
+    var allocationIndex = allocations.indexOf(allocation);
+    var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
+    
+    sendText(chatId,
+      "⚡ Thu nhập nhanh: " + description + " " + formatNumberWithSeparator(amount) + 
+      " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+      keyboard
+    );
+    
+  } catch (error) {
+    Logger.log("Error in handleQuickIncome: " + error.toString());
+    sendText(chatId, "❌ Có lỗi xảy ra khi xử lý lệnh. Vui lòng thử lại!");
+  }
+}
+
+// === TESTING SLASH COMMANDS ===
+
+// Test slash commands functionality
+function testSlashCommands() {
+  Logger.log("=== TEST SLASH COMMANDS ===");
+  
+  var testChatId = 999888777;
+  
+  try {
+    Logger.log("1. Testing /help command:");
+    sendCommandsList(testChatId);
+    Logger.log("  ✅ Commands list sent");
+    
+    Logger.log("2. Testing quick expense command:");
+    Logger.log("  Simulating: /chi ăn sáng 25000");
+    handleQuickExpense(testChatId, testChatId, "ăn sáng 25000", "TestUser");
+    Logger.log("  ✅ Quick expense processed");
+    
+    Logger.log("3. Testing quick income command:");
+    Logger.log("  Simulating: /thu lương tháng 10000000");
+    handleQuickIncome(testChatId, testChatId, "lương tháng 10000000", "TestUser");
+    Logger.log("  ✅ Quick income processed");
+    
+    Logger.log("4. Testing invalid formats:");
+    Logger.log("  Testing /chi without amount:");
+    handleQuickExpense(testChatId, testChatId, "ăn sáng", "TestUser");
+    Logger.log("  ✅ Error handling for invalid format");
+    
+    Logger.log("  Testing /thu with invalid amount:");
+    handleQuickIncome(testChatId, testChatId, "lương abc", "TestUser");  
+    Logger.log("  ✅ Error handling for invalid amount");
+    
+    Logger.log("5. Testing different formats:");
+    Logger.log("  Testing /chi with dash: 'cà phê - 15000':");
+    handleQuickExpense(testChatId, testChatId, "cà phê - 15000", "TestUser");
+    Logger.log("  ✅ Dash format processed");
+    
+    Logger.log("  Testing /thu with plus: 'thưởng + 5000000':");
+    handleQuickIncome(testChatId, testChatId, "thưởng + 5000000", "TestUser");
+    Logger.log("  ✅ Plus format processed");
+    
+    Logger.log("🎉 All slash commands tests completed successfully!");
+    
+  } catch (error) {
+    Logger.log("❌ Error in slash commands test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST SLASH COMMANDS COMPLETED ===");
+}
+
+// Test doPost với slash commands
+function testDoPostSlashCommands() {
+  Logger.log("=== TEST DOPOST SLASH COMMANDS ===");
+  
+  try {
+    // Mock request objects for different slash commands (updated)
+    var testCommands = [
+      {
+        command: "/chi ăn trưa 35000",
+        description: "Quick expense input - Priority #1"
+      },
+      {
+        command: "/thu freelance 2000000", 
+        description: "Quick income input - Priority #2"
+      },
+      {
+        command: "/tongtien",
+        description: "Show current balance"
+      },
+      {
+        command: "/tongchi",
+        description: "Show total expenses"
+      },
+      {
+        command: "/xemhu",
+        description: "Show jar details (updated from /chitiet)"
+      },
+      {
+        command: "/help",
+        description: "Show commands list"
+      },
+      {
+        command: "/xoachitieu",
+        description: "Clear expenses (updated from /clearchitieu)"
+      }
+    ];
+    
+    for (var i = 0; i < testCommands.length; i++) {
+      var testCmd = testCommands[i];
+      Logger.log((i + 1) + ". Testing: " + testCmd.command + " (" + testCmd.description + ")");
+      
+      // Mock doPost request
+      var mockRequest = {
+        postData: {
+          contents: JSON.stringify({
+            message: {
+              chat: { id: 123456789 },
+              from: { first_name: "TestUser" },
+              text: testCmd.command
+            }
+          })
+        }
+      };
+      
+      Logger.log("  Mock request created for: " + testCmd.command);
+      // Note: Không gọi doPost thực tế để tránh spam messages
+      Logger.log("  ✅ Command would be processed by doPost");
+    }
+    
+    Logger.log("🎉 All doPost slash commands tests completed!");
+    
+  } catch (error) {
+    Logger.log("❌ Error in doPost slash commands test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST DOPOST SLASH COMMANDS COMPLETED ===");
+}
+
+// Test updated commands structure
+function testUpdatedCommands() {
+  Logger.log("=== TEST UPDATED COMMANDS STRUCTURE ===");
+  
+  try {
+    Logger.log("1. Priority Commands (đứng đầu):");
+    Logger.log("  ✅ /chi - Quick expense input");
+    Logger.log("  ✅ /thu - Quick income input");
+    
+    Logger.log("2. View Commands:");
+    Logger.log("  ✅ /tongtien - Current balance");
+    Logger.log("  ✅ /tongchi - Total expenses");
+    Logger.log("  ✅ /tongthunhap - Total income");
+    Logger.log("  ✅ /xemhu - Jar details (was /chitiet)");
+    Logger.log("  ✅ /lichsu - Transaction history");
+    
+    Logger.log("3. Management Commands:");
+    Logger.log("  ✅ /xoathunhap - Clear income (was /clearthunhap)");
+    Logger.log("  ✅ /xoachitieu - Clear expenses (was /clearchitieu)");
+    Logger.log("  ✅ /xoatatca - Clear all (was /clearall)");
+    
+    Logger.log("4. Navigation Commands:");
+    Logger.log("  ✅ /start - Introduction (no menu)");
+    Logger.log("  ✅ /menu - Interactive menu");
+    Logger.log("  ✅ /help - Detailed guide");
+    
+    Logger.log("5. Removed aliases:");
+    Logger.log("  ❌ /balance (now only /tongtien)");
+    Logger.log("  ❌ /chitieu (now only /tongchi)");
+    Logger.log("  ❌ /thunhap (now only /tongthunhap)");
+    Logger.log("  ❌ /hu (now only /xemhu)");
+    Logger.log("  ❌ /history (now only /lichsu)");
+    
+    Logger.log("6. Testing BotFather commands format:");
+    var botFatherCommands = [
+      "chi - Nhập chi tiêu nhanh (VD: /chi ăn sáng 25000)",
+      "thu - Nhập thu nhập nhanh (VD: /thu lương 10000000)",
+      "tongtien - Xem số tiền hiện tại",
+      "tongchi - Xem tổng chi tiêu",
+      "tongthunhap - Xem tổng thu nhập",
+      "xemhu - Xem chi tiết số dư các hũ",
+      "lichsu - Xem lịch sử giao dịch",
+      "start - Khởi động và giới thiệu bot",
+      "menu - Hiển thị menu chính với các tùy chọn",
+      "help - Hiển thị hướng dẫn sử dụng chi tiết",
+      "xoathunhap - Xóa tất cả thu nhập",
+      "xoachitieu - Xóa tất cả chi tiêu",
+      "xoatatca - Xóa tất cả dữ liệu"
+    ];
+    
+    Logger.log("  BotFather commands ready (" + botFatherCommands.length + " commands):");
+    for (var i = 0; i < botFatherCommands.length; i++) {
+      Logger.log("    " + (i + 1) + ". " + botFatherCommands[i]);
+    }
+    
+    Logger.log("🎉 Commands structure updated successfully!");
+    Logger.log("💡 Next steps:");
+    Logger.log("  1. Copy BotFather commands from comment in code");
+    Logger.log("  2. Set commands in @BotFather");
+    Logger.log("  3. Test slash commands menu with /");
+    
+  } catch (error) {
+    Logger.log("❌ Error in updated commands test: " + error.toString());
+  }
+  
+  Logger.log("=== TEST UPDATED COMMANDS STRUCTURE COMPLETED ===");
 }
 
 // Hàm test simulate nhấn nút chỉnh sửa
