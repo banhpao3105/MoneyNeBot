@@ -1,0 +1,280 @@
+// Test các tính năng mới: Tỉ lệ % và Biểu đồ cho MoneyNeBot
+// Ngày: 5/8/2025
+// Update: Thêm tính năng % và biểu đồ cho NHÃN (SubCategories)
+// Final Update: GỘP CHUNG VÀO 2 LỆNH CHÍNH với MENU SELECTION
+
+// RUN TESTS:
+// 1. testPercentageAndChartFeatures() - Test core allocation functions
+// 2. testPercentageAndChartCallbacks() - Test allocation callback handlers  
+// 3. testNewCommands() - Test new commands
+// 4. testSubCategoryPercentageAndChart() - Test subcategory functions
+// 5. testSubCategoryCallbacks() - Test subcategory callbacks
+// 6. testAllPercentageAndChartFeatures() - Test comprehensive all features
+// 7. testMenuSelectionFeatures() - Test menu selection system
+// 8. testConsolidatedMenuSystem() - Test final consolidated system
+
+=== 🚀 FINAL CONSOLIDATED SYSTEM ===
+
+## 📱 SIMPLIFIED COMMANDS (CHÍNH):
+
+**CHỈ CÒN 2 LỆNH CHÍNH:**
+
+1. **📊 `/tile`** - Menu Tỉ Lệ %
+   - Hiển thị menu chọn loại tỉ lệ %
+   - Options: Chi tiêu hũ | Thu nhập hũ | Chi tiêu nhãn
+   
+2. **📈 `/bieudo`** - Menu Biểu Đồ  
+   - Hiển thị menu chọn loại biểu đồ
+   - Options: Chi tiêu hũ | Thu nhập hũ | Chi tiêu nhãn
+
+## 🎮 MENU SELECTION SYSTEM:
+
+### Menu `/tile` (Tỉ Lệ %):
+```
+📈 Chọn loại tỉ lệ % bạn muốn xem:
+
+🏺 Tỉ lệ % Chi tiêu theo Hũ
+💰 Tỉ lệ % Thu nhập theo Hũ  
+🏷️ Tỉ lệ % Chi tiêu theo Nhãn
+📊 Xem Biểu đồ
+```
+
+### Menu `/bieudo` (Biểu Đồ):
+```
+📊 Chọn loại biểu đồ bạn muốn xem:
+
+🏺 Biểu đồ Chi tiêu theo Hũ
+💰 Biểu đồ Thu nhập theo Hũ
+🏷️ Biểu đồ Chi tiêu theo Nhãn  
+📈 Xem Tỉ lệ %
+```
+
+## 🔄 NEW CALLBACK HANDLERS:
+
+### Menu Selection:
+- `show_percentage_menu` → sendPercentageSelectionMenu()
+- `show_chart_menu` → sendChartSelectionMenu()
+
+### Percentage Actions:
+- `percentage_allocation_expense` → sendAllocationPercentages()
+- `percentage_allocation_income` → sendIncomePercentages()
+- `percentage_subcategory` → sendSubCategoryPercentages()
+
+### Chart Actions:
+- `chart_allocation_expense` → sendAllocationChart()
+- `chart_allocation_income` → sendIncomeChart()
+- `chart_subcategory` → sendSubCategoryChart()
+
+## 🗑️ REMOVED OLD HANDLERS:
+- ❌ `view_percentage` (replaced by `show_percentage_menu`)
+- ❌ `view_chart` (replaced by `show_chart_menu`)
+- ❌ `view_income_percentage` (replaced by `percentage_allocation_income`)
+- ❌ `view_income_chart` (replaced by `chart_allocation_income`)
+- ❌ `view_subcategory_percentage` (replaced by `percentage_subcategory`)
+- ❌ `view_subcategory_chart` (replaced by `chart_subcategory`)
+
+## 📱 REMOVED OLD COMMANDS:
+- ❌ `/tilethunhap` → Now in `/tile` menu
+- ❌ `/bieudothunhap` → Now in `/bieudo` menu  
+- ❌ `/tilenhan` → Now in `/tile` menu
+- ❌ `/bieudonhan` → Now in `/bieudo` menu
+
+=== CÁC TÍNH NĂNG ĐƯỢC BẢO TOÀN ===
+
+## HŨ (ALLOCATIONS) - Unchanged:
+
+1. TỈ LỆ % CHI TIÊU:
+   - Access: `/tile` → "🏺 Tỉ lệ % Chi tiêu theo Hũ"
+   - Function: sendAllocationPercentages()
+   - Features: Progress bars, phân tích thông minh
+
+2. BIỂU ĐỒ CHI TIÊU:
+   - Access: `/bieudo` → "🏺 Biểu đồ Chi tiêu theo Hũ"
+   - Function: sendAllocationChart()
+   - Features: ASCII art, insights
+
+3. TỈ LỆ % THU NHẬP:
+   - Access: `/tile` → "💰 Tỉ lệ % Thu nhập theo Hũ"
+   - Function: sendIncomePercentages()
+   - Features: Thu nhập analysis
+
+4. BIỂU ĐỒ THU NHẬP:
+   - Access: `/bieudo` → "💰 Biểu đồ Thu nhập theo Hũ"
+   - Function: sendIncomeChart()
+   - Features: Visual charts
+
+## NHÃN (SUBCATEGORIES) - Unchanged:
+
+5. TỈ LỆ % CHI TIÊU THEO NHÃN:
+   - Access: `/tile` → "🏷️ Tỉ lệ % Chi tiêu theo Nhãn"
+   - Function: sendSubCategoryPercentages()
+   - Features: Grouped by allocation, detailed breakdown
+
+6. BIỂU ĐỒ CHI TIÊU THEO NHÃN:
+   - Access: `/bieudo` → "🏷️ Biểu đồ Chi tiêu theo Nhãn"
+   - Function: sendSubCategoryChart()
+   - Features: Top rankings, medals, analysis
+
+=== CÁC FUNCTION HELPER ===
+
+## Allocation Functions:
+1. calculateAllocationPercentages(userId):
+   - Tính tỉ lệ % cho từng hũ
+   - Trả về object chứa percentages, totalAmount, allocations
+
+2. createPercentageBar(percentage):
+   - Tạo thanh % bằng ký tự █ và ░
+   - Length: 20 ký tự
+
+3. createBarChart(percentages, allocations):
+   - Tạo biểu đồ cột ASCII
+   - Height: 10 levels
+   - Có tên hũ rút gọn
+
+4. getShortAllocationName(allocation):
+   - Rút gọn tên hũ cho biểu đồ
+   - VD: "Chi tiêu thiết yếu" → "Thiết yếu"
+
+## SubCategory Functions:
+5. calculateSubCategoryPercentages(userId):
+   - Tính tỉ lệ % cho từng subcategory
+   - Group theo allocation với tổng phần
+   - Return: percentages, balances, totalAmount, allocationTotals
+
+6. getTopSubCategories(percentages, limit):
+   - Lấy top N subcategories theo %
+   - Sắp xếp giảm dần
+
+7. createSubCategoryBarChart(topSubCategories, percentages, balances):
+   - Tạo biểu đồ cột cho subcategories
+   - Height: 8 levels, có legend và chú giải
+
+8. getShortSubCategoryName(subCategory):
+   - Rút gọn tên subcategory cho hiển thị
+   - Map toàn bộ 30+ subcategories
+
+=== MENU UPDATES ===
+
+1. Main keyboard:
+   - Thêm "📈 Xem Tỉ Lệ %" button
+   - Thêm "📊 Xem Biểu Đồ" button
+
+2. Allocation summary menu:
+   - Thêm "📈 Xem tỉ lệ %" button  
+   - Thêm "📊 Xem biểu đồ" button
+
+3. SubCategory summary menu:
+   - Thêm "📈 Tỉ lệ % nhãn" button
+   - Thêm "📊 Biểu đồ nhãn" button
+
+4. Cross-navigation:
+   - Từ percentage → chart
+   - Từ chart → percentage
+   - Chi tiêu ↔ Thu nhập views
+   - Hũ ↔ Nhãn navigation
+
+=== HELP & COMMANDS ===
+
+Updated /help command với section mới:
+� PHÂN TÍCH & BIỂU ĐỒ:
+- /tile - Xem tỉ lệ % chi tiêu theo hũ
+- /bieudo - Xem biểu đồ chi tiêu  
+- /tilethunhap - Xem tỉ lệ % thu nhập
+- /bieudothunhap - Xem biểu đồ thu nhập
+- /tilenhan - Xem tỉ lệ % chi tiêu theo nhãn
+- /bieudonhan - Xem biểu đồ chi tiêu theo nhãn
+
+Updated sendCommandsList() function với 6 new commands.
+
+=== INTEGRATION POINTS ===
+
+1. doPost() function:
+   - Thêm 6 callback handlers mới (4 allocation + 2 subcategory)
+   - Integration với existing flow
+
+2. Menu systems:
+   - Tích hợp với existing keyboards
+   - Consistent navigation patterns
+
+3. Data processing:
+   - Sử dụng existing getTotalAllocationBalances()
+   - Sử dụng existing getTotalSubCategoryBalances()
+   - Compatible với current data structure
+
+=== FEATURES HIGHLIGHT ===
+
+📊 BIỂU ĐỒ ASCII HŨ:
+```
+█
+█ █
+█ █ █
+█ █ █ █
+T H T G T C
+```
+
+📋 BIỂU ĐỒ ASCII NHÃN:
+```
+█
+█ █
+█ █ █
+█ █ █ █
+1 2 3 4
+
+📋 Chú giải:
+1. Ăn ngoài: 25.0%
+2. Giải trí: 20.0%
+3. Du lịch: 15.0%
+4. Sách: 10.0%
+```
+
+📈 THANH TỈ LỆ %:
+```
+████████████░░░░░░░░ 60.0%
+██████░░░░░░░░░░░░░░ 30.0%  
+██░░░░░░░░░░░░░░░░░░ 10.0%
+```
+
+🎯 PHÂN TÍCH THÔNG MINH CHO NHÃN:
+- Top 5 nhãn với ranking 🥇🥈🥉
+- Phân tích theo hũ dominance
+- Automatic insights
+
+🏆 PHÂN TÍCH THÔNG MINH CHO HŨ:
+- Hũ chi nhiều nhất
+- Hũ chi ít nhất
+- Thu nhập insights
+
+=== TESTING ===
+
+Các test functions được thêm:
+1. testPercentageAndChartFeatures() - Core allocation tests
+2. testPercentageAndChartCallbacks() - Allocation callback tests
+3. testNewCommands() - Commands tests
+4. testSubCategoryPercentageAndChart() - Core subcategory tests
+5. testSubCategoryCallbacks() - Subcategory callback tests
+6. testAllPercentageAndChartFeatures() - Comprehensive all tests
+
+=== COMMANDS SUMMARY ===
+
+📊 6 NEW COMMANDS:
+- /tile → Allocation %
+- /bieudo → Allocation chart
+- /tilethunhap → Income %
+- /bieudothunhap → Income chart
+- /tilenhan → SubCategory %
+- /bieudonhan → SubCategory chart
+
+🔄 6 NEW CALLBACKS:
+- view_percentage → Allocation %
+- view_chart → Allocation chart
+- view_income_percentage → Income %
+- view_income_chart → Income chart
+- view_subcategory_percentage → SubCategory %
+- view_subcategory_chart → SubCategory chart
+
+🎮 ENHANCED NAVIGATION:
+- Main menu có đầy đủ options
+- Cross-navigation giữa tất cả views
+- Consistent user experience
+
+Tất cả functions đã sẵn sàng sử dụng và deploy!
