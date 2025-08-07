@@ -536,8 +536,16 @@ function getTotalAllocationBalances(userId) {
 }
 
 function sendTotalPhanboSummary(context) {
-  const allocations = getTotalAllocationBalances(context.chatId);
-  let message = "🏺 <b>Số tiền phân bổ theo hũ:</b>\n\n";
+  // For group chat, use group ID to get transactions
+  const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const allocations = getTotalAllocationBalances(entityId);
+  
+  let message;
+  if (context.chatType === 'group' || context.chatType === 'supergroup') {
+    message = "🏺 <b>Số tiền phân bổ theo hũ (nhóm):</b>\n\n";
+  } else {
+    message = "🏺 <b>Số tiền phân bổ theo hũ:</b>\n\n";
+  }
   
   let totalBalance = 0;
   let hasData = false;
@@ -2401,12 +2409,21 @@ function getSheet(userId) {
 
 
 function sendTotalIncomeSummary(context) {
-  const totalIncome = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.INCOME);
-  const totalExpenses = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.EXPENSE);
-  const currentBalance = getCurrentBalance(context.chatId);
+  // For group chat, use group ID to get transactions
+  const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const totalIncome = getTotalAmountByType(entityId, TRANSACTION_TYPE.INCOME);
+  const totalExpenses = getTotalAmountByType(entityId, TRANSACTION_TYPE.EXPENSE);
+  const currentBalance = getCurrentBalance(entityId);
 
-  let message = `💰 Tổng thu nhập của bạn là: ${formatNumberWithSeparator(totalIncome)}đ\n`;
-  message += `💹 Số tiền hiện tại của bạn là: ${formatNumberWithSeparator(currentBalance)}đ\n`;
+  let message;
+  if (context.chatType === 'group' || context.chatType === 'supergroup') {
+    message = `📊 <b>Tổng quan thu nhập nhóm</b>\n`;
+    message += `💰 Tổng thu nhập nhóm: ${formatNumberWithSeparator(totalIncome)}đ\n`;
+    message += `💹 Số tiền hiện tại nhóm: ${formatNumberWithSeparator(currentBalance)}đ\n`;
+  } else {
+    message = `💰 Tổng thu nhập của bạn: ${formatNumberWithSeparator(totalIncome)}đ\n`;
+    message += `💹 Số tiền hiện tại của bạn: ${formatNumberWithSeparator(currentBalance)}đ\n`;
+  }
 
   const menu = {
     inline_keyboard: [
@@ -3166,7 +3183,7 @@ function handleMessage(message) {
   } else if (context.text === '/help' || context.text === '/commands') {
     sendCommandsList(context.chatId);
   } else if (context.text === '/tongtien') {
-    processShowTotalMoney(context.chatId);
+    processShowTotalMoney(context);
   } else if (context.text === '/tongchi') {
     processShowTotalExpenseCommand(context);
   } else if (context.text === '/tongthunhap') {
@@ -3176,11 +3193,14 @@ function handleMessage(message) {
     sendTotalPhanboSummary(context);
   } else if (context.text === '/xemnhan') {
     sendLoadingMessage(context.chatId, "tính toán chi tiêu theo nhãn");
-    sendTotalSubCategorySummary(context);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    sendTotalSubCategorySummary(context.chatId, entityId);
   } else if (context.text === '/tile' || context.text === '/tylе') {
-    sendPercentageSelectionMenu(context.chatId, context.chatId);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    sendPercentageSelectionMenu(context.chatId, entityId);
   } else if (context.text === '/biеudo' || context.text === '/chart') {
-    sendChartSelectionMenu(context.chatId, context.chatId);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    sendChartSelectionMenu(context.chatId, entityId);
   } else if (context.text === '/lichsu') {
     processTransactionHistoryCommand(context);
   } else if (context.text.startsWith('/chi ')) {
@@ -3188,15 +3208,20 @@ function handleMessage(message) {
   } else if (context.text.startsWith('/thu ')) {
     processQuickIncomeCommand(context);
   } else if (context.text.startsWith('/del')) {
-    processDeleteCommand(context.chatId, context.text);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    processDeleteCommand(entityId, context.text);
   } else if (context.text === '/xoathunhap') {
-    processDeleteIncome(context.chatId);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    processDeleteIncome(entityId);
   } else if (context.text === '/xoachitieu') {
-    processDeleteExpenses(context.chatId);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    processDeleteExpenses(entityId);
   } else if (context.text === '/xoatatca') {
-    processDeleteAll(context.chatId);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    processDeleteAll(entityId);
   } else if (context.text.startsWith("/history")) {
-    processHistoryCommand(context.chatId, context.text);
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    processHistoryCommand(entityId, context.text);
   } else if (context.text === '/export') {
     processExportCommand(context);
   } else if (context.text === '/budget' || context.text === '/ngansach') {
@@ -3570,8 +3595,11 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     
     const pageSize = 10; // 10 transactions per page
     
+    // For group chat, use group ID to get transactions
+    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+    
     // ✨ OPTIMIZED: Get only the page we need from database
-    const historyData = getTransactionHistoryPage(context.chatId, page, pageSize);
+    const historyData = getTransactionHistoryPage(entityId, page, pageSize);
     const { transactions, totalTransactions } = historyData;
     
     if (!transactions || transactions.length === 0) {
@@ -3802,28 +3830,57 @@ function processEditTransaction(context) {
 
 function processShowTotalExpenses(context) {
   try {
-    const totalExpenses = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.EXPENSE);
-    sendText(context.chatId, "Tổng chi tiêu của bạn là: " + totalExpenses.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), menuchi);
+    // For group chat, need to send back to group chat but use correct entity ID for data
+    const entityId = context.groupChatId || context.chatId;
+    const targetChatId = context.groupChatId || context.chatId;
+    
+    const totalExpenses = getTotalAmountByType(entityId, TRANSACTION_TYPE.EXPENSE);
+    
+    let message = "💸 Tổng chi tiêu: " + totalExpenses.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    if (context.chatType === 'group' || context.chatType === 'supergroup') {
+      message = "📊 <b>Chi tiêu nhóm</b>\n" + message;
+    } else {
+      message = "💸 Tổng chi tiêu của bạn: " + totalExpenses.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+    
+    sendText(targetChatId, message, menuchi);
   } catch (err) {
     Logger.log("Error in processShowTotalExpenses: " + err.toString());
-    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi tính tổng chi tiêu. Vui lòng thử lại.");
+    const targetChatId = context.groupChatId || context.chatId;
+    sendText(targetChatId, "❌ Đã có lỗi xảy ra khi tính tổng chi tiêu. Vui lòng thử lại.");
   }
 }
 
 function processShowTotalIncome(context) {
   try {
-    sendTotalIncomeSummary(context);
+    // Create updated context with correct entityId
+    const updatedContext = {
+      ...context,
+      chatId: context.groupChatId || context.chatId // Use group chat ID for sending
+    };
+    sendTotalIncomeSummary(updatedContext);
   } catch (err) {
     Logger.log("Error in processShowTotalIncome: " + err.toString());
-    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi tính tổng thu nhập. Vui lòng thử lại.");
+    const targetChatId = context.groupChatId || context.chatId;
+    sendText(targetChatId, "❌ Đã có lỗi xảy ra khi tính tổng thu nhập. Vui lòng thử lại.");
   }
 }
 
 function processShowCurrentBalance(context) {
   try {
-    const currentBalance = getCurrentBalance(context.chatId);
-    const balanceMessage = "💰 <b>Tổng quan tài chính:</b>\n\n" +
-      "💹 Số tiền hiện tại của bạn là: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    const entityId = context.groupChatId || context.chatId;
+    const targetChatId = context.groupChatId || context.chatId;
+    
+    const currentBalance = getCurrentBalance(entityId);
+    
+    let balanceMessage;
+    if (context.chatType === 'group' || context.chatType === 'supergroup') {
+      balanceMessage = "💰 <b>Tổng quan tài chính nhóm:</b>\n\n" +
+        "💹 Số tiền hiện tại nhóm: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    } else {
+      balanceMessage = "💰 <b>Tổng quan tài chính:</b>\n\n" +
+        "💹 Số tiền hiện tại của bạn: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
     
     const overviewKeyboard = {
       "inline_keyboard": [
@@ -3846,23 +3903,32 @@ function processShowCurrentBalance(context) {
       ]
     };
     
-    editText(context.chatId, context.messageId, balanceMessage, overviewKeyboard);
+    editText(targetChatId, context.messageId, balanceMessage, overviewKeyboard);
   } catch (err) {
     Logger.log("Error in processShowCurrentBalance: " + err.toString());
-    editText(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi tính số dư. Vui lòng thử lại.", null);
+    const errorTargetChatId = context.groupChatId || context.chatId;
+    editText(errorTargetChatId, context.messageId, "❌ Đã có lỗi xảy ra khi tính số dư. Vui lòng thử lại.", null);
   }
 }
 
 function processShowAllocationBalances(context) {
   try {
     // Send loading message before heavy calculation
-    if (context.messageId) {
-      editText(context.chatId, context.messageId, "⏳ Đang tính toán số dư các hũ...", null);
-    }
-    sendTotalPhanboSummary(context); // Updated to pass context directly
+    const targetChatId = context.groupChatId || context.chatId;
+    updateLoadingMessage(targetChatId, context.messageId, "⏳ Đang tính toán số dư các hũ...");
+    
+    // Create updated context with correct chat ID
+    const updatedContext = {
+      ...context,
+      chatId: targetChatId,
+      messageId: context.messageId
+    };
+    
+    sendTotalPhanboSummary(updatedContext); // Use updated context
   } catch (err) {
     Logger.log("Error in processShowAllocationBalances: " + err.toString());
-    editText(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi tính số dư các hũ. Vui lòng thử lại.", null);
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, "❌ Đã có lỗi xảy ra khi tính số dư các hũ. Vui lòng thử lại.", null);
   }
 }
 
@@ -3906,13 +3972,37 @@ function processMenuCommand(context) {
 }
 
 function processShowTotalMoney(context) {
-  const currentBalance = getCurrentBalance(context.chatId);
-  sendText(context.chatId, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
+  // For group chat, use group ID to get transactions
+  const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const currentBalance = getCurrentBalance(entityId);
+  
+  let message = "💰 Số tiền hiện tại: " + formatNumberWithSeparator(currentBalance);
+  
+  // Add context for group chat
+  if (context.chatType === 'group' || context.chatType === 'supergroup') {
+    message = "� <b>Tổng quan nhóm</b>\n" + message;
+  } else {
+    message = "�💰 Số tiền hiện tại của bạn: " + formatNumberWithSeparator(currentBalance);
+  }
+  
+  sendText(context.chatId, message);
 }
 
 function processShowTotalExpenseCommand(context) {
-  const totalExpenses = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.EXPENSE);
-  sendText(context.chatId, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
+  // For group chat, use group ID to get transactions
+  const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const totalExpenses = getTotalAmountByType(entityId, TRANSACTION_TYPE.EXPENSE);
+  
+  let message = "💸 Tổng chi tiêu: " + formatNumberWithSeparator(totalExpenses);
+  
+  // Add context for group chat
+  if (context.chatType === 'group' || context.chatType === 'supergroup') {
+    message = "📊 <b>Chi tiêu nhóm</b>\n" + message;
+  } else {
+    message = "💸 Tổng chi tiêu của bạn: " + formatNumberWithSeparator(totalExpenses);
+  }
+  
+  sendText(context.chatId, message);
 }
 
 /**
