@@ -290,18 +290,23 @@ function getNextSequenceNumber(userId, date) {
   return count + 1; // Trả về số thứ tự tiếp theo
 }
 
-function addTransactionData(userId, date, description, amount, allocation, type, subCategory) {
-  var sheet = getSheet(userId); 
+function addTransactionData(entityId, date, description, amount, allocation, type, subCategory, chatType = 'private', senderName = null) {
+  const sheet = getSheet(entityId, chatType, senderName);
   subCategory = subCategory || ""; // Mặc định rỗng nếu không có
   
   // Tính số thứ tự trong ngày
-  var sequenceNumber = getNextSequenceNumber(userId, date);
+  var sequenceNumber = getNextSequenceNumber(entityId, date);
   
-  // Thêm STT vào đầu row
-  sheet.appendRow([sequenceNumber, date, description, amount, allocation, type, subCategory]);
+  const rowData = [sequenceNumber, date, description, amount, allocation, type, subCategory];
+
+  if (chatType === 'group' || chatType === 'supergroup') {
+    rowData.unshift(senderName || 'Unknown'); // Add senderName at the beginning for group transactions
+  }
+
+  sheet.appendRow(rowData);
   
   // Check for budget alerts after adding transaction
-  checkAndSendBudgetAlerts(userId, allocation, subCategory, amount, type);
+  checkAndSendBudgetAlerts(entityId, allocation, subCategory, amount, type);
   
   // Trả về sequence number để hiển thị trong telegram
   return sequenceNumber;
@@ -530,65 +535,49 @@ function getTotalAllocationBalances(userId) {
   return balances;
 }
 
-function sendTotalPhanboSummary(chatId, userId, messageId) {
-  var allocations = getTotalAllocationBalances(userId);
-  var message = "🏺 <b>Số tiền phân bổ theo hũ:</b>\n\n";
+function sendTotalPhanboSummary(context) {
+  const allocations = getTotalAllocationBalances(context.chatId);
+  let message = "🏺 <b>Số tiền phân bổ theo hũ:</b>\n\n";
   
-  var totalBalance = 0;
-  var hasData = false;
+  let totalBalance = 0;
+  let hasData = false;
   
-  for (var allocation in allocations) {
+  for (const allocation in allocations) {
     if (allocations[allocation] !== 0) {
       hasData = true;
-      var balanceStr = allocations[allocation].toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-      var icon = allocations[allocation] >= 0 ? "💰" : "💸";
+      const balanceStr = formatNumberWithSeparator(allocations[allocation]);
+      const icon = allocations[allocation] >= 0 ? "💰" : "💸";
       message += icon + " <b>" + allocation + ":</b> " + balanceStr + "\n";
       totalBalance += allocations[allocation];
     }
   }
   
   if (hasData) {
-    message += "\n<b>💹 Tổng số dư tất cả hũ: " + totalBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "</b>";
+    message += "\n<b>💹 Tổng số dư tất cả hũ: " + formatNumberWithSeparator(totalBalance) + "</b>";
   } else {
     message = "Chưa có giao dịch nào được phân bổ vào các hũ.";
   }
   
-  var allocationMenu = {
-    "inline_keyboard": [
+  const allocationMenu = {
+    inline_keyboard: [
       [
-        {
-          text: '📋 Xem lịch sử theo hũ',
-          callback_data: 'view_by_allocation'
-        }
+        { text: '📋 Xem lịch sử theo hũ', callback_data: 'view_by_allocation' }
       ],
       [
-        {
-          text: '🏷️ Xem theo nhãn',
-          callback_data: 'view_subcategory_summary'
-        },
-        {
-          text: '📊 Tổng quan',
-          callback_data: 'currentbalance'
-        }
+        { text: '🏷️ Xem theo nhãn', callback_data: 'view_subcategory_summary' },
+        { text: '📊 Tổng quan', callback_data: 'currentbalance' }
       ],
       [
-        {
-          text: '📈 Xem tỉ lệ %',
-          callback_data: 'show_percentage_menu'
-        },
-        {
-          text: '📊 Xem biểu đồ',
-          callback_data: 'show_chart_menu'
-        }
+        { text: '📈 Xem tỉ lệ %', callback_data: 'show_percentage_menu' },
+        { text: '📊 Xem biểu đồ', callback_data: 'show_chart_menu' }
       ]
     ]
   };
   
-  // Sử dụng editText nếu có messageId, ngược lại dùng sendText
-  if (messageId) {
-    editText(chatId, messageId, message, allocationMenu);
+  if (context.messageId) {
+    editText(context.chatId, context.messageId, message, allocationMenu);
   } else {
-    sendText(chatId, message, allocationMenu);
+    sendText(context.chatId, message, allocationMenu);
   }
 }
 
@@ -2411,32 +2400,24 @@ function getSheet(userId) {
 }
 
 
-function sendTotalIncomeSummary(chatId, userId) {
-  var totalIncome = getTotalAmountByType(userId, "ThuNhap");
-  var totalExpenses = getTotalAmountByType(userId, "ChiTieu");
-  var currentBalance = getCurrentBalance(userId);
+function sendTotalIncomeSummary(context) {
+  const totalIncome = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.INCOME);
+  const totalExpenses = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.EXPENSE);
+  const currentBalance = getCurrentBalance(context.chatId);
 
-  var message = "- Tổng thu nhập của bạn là: " + totalIncome.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "\n";
-  message += "- Số tiền hiện tại của bạn là: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "\n";
+  let message = `💰 Tổng thu nhập của bạn là: ${formatNumberWithSeparator(totalIncome)}đ\n`;
+  message += `💹 Số tiền hiện tại của bạn là: ${formatNumberWithSeparator(currentBalance)}đ\n`;
 
-
-
-  var menuchithu = {
-    "inline_keyboard": [
+  const menu = {
+    inline_keyboard: [
       [
-        {
-          text: 'Xem Tổng Chi Tiêu',
-          callback_data: 'totalchi'
-        },
-        {
-          text: 'Xem Chi Tiết Các Hũ',
-          callback_data: 'getTotalAllocationBalances'
-        }
+        { text: '💸 Xem Tổng Chi Tiêu', callback_data: 'totalchi' },
+        { text: '🏺 Xem Chi Tiết Các Hũ', callback_data: 'getTotalAllocationBalances' }
       ]
     ]
   };
 
-  sendText(chatId, message, menuchithu);
+  sendText(context.chatId, message, menu);
 }
 
 /**
@@ -2814,7 +2795,7 @@ function getRandomGeminiApiKey() {
 
 
 
-function processVoiceMessage(fileId, chatId) {
+function processVoiceMessage(fileId, context) {
   var telegramUrl = "https://api.telegram.org/bot" + token;
 
   
@@ -2823,7 +2804,7 @@ function processVoiceMessage(fileId, chatId) {
   var fileInfo = JSON.parse(getFileResponse.getContentText());
   if (!fileInfo.ok) {
     Logger.log("Không lấy được file từ Telegram.");
-    sendText(chatId, "Xin lỗi, không thể xử lý tin nhắn voice của bạn.");
+    sendText(context.chatId, "Xin lỗi, không thể xử lý tin nhắn voice của bạn.");
     return;
   }
   var filePath = fileInfo.result.file_path;
@@ -2862,7 +2843,7 @@ function processVoiceMessage(fileId, chatId) {
   var uploadUrl = initResponseHeaders["X-Goog-Upload-Url"] || initResponseHeaders["x-goog-upload-url"];
   if (!uploadUrl) {
     Logger.log("Không lấy được upload URL: " + initResponse.getContentText());
-    sendText(chatId, "Lỗi khi xử lý file voice.");
+    sendText(context.chatId, "Lỗi khi xử lý file voice.");
     return;
   }
 
@@ -2883,7 +2864,7 @@ function processVoiceMessage(fileId, chatId) {
   var fileUri = uploadResult.file.uri;
   if (!fileUri) {
     Logger.log("Upload thất bại: " + uploadResponse.getContentText());
-    sendText(chatId, "Upload file voice thất bại.");
+    sendText(context.chatId, "Upload file voice thất bại.");
     return;
   }
   Logger.log("File URI: " + fileUri);
@@ -2940,20 +2921,20 @@ function processVoiceMessage(fileId, chatId) {
         var transactions = JSON.parse(resultText);
 
         
-        recordTransactionsFromAI(chatId, transactions);
+        recordTransactionsFromAI(context.chatId, transactions, context.chatType, context.userName);
       } else {
-        sendText(chatId, "Không nhận được nội dung phản hồi từ hệ thống AI.");
+        sendText(context.chatId, "Không nhận được nội dung phản hồi từ hệ thống AI.");
       }
     } else {
-      sendText(chatId, "AI không nghe rõ được Voice, vui lòng thử lại.");
+      sendText(context.chatId, "AI không nghe rõ được Voice, vui lòng thử lại.");
     }
   } catch (err) {
     Logger.log("Lỗi khi xử lý phản hồi: " + err);
-    sendText(chatId, "AI không nghe rõ được Voice, vui lòng thử lại.");
+    sendText(context.chatId, "AI không nghe rõ được Voice, vui lòng thử lại.");
   }
 }
 
-function recordTransactionsFromAI(chatId, transactions) {
+function recordTransactionsFromAI(chatId, transactions, chatType = 'private', senderName = null) {
   
   var isInvalid = transactions.some(function(tx) {
     return !tx.amount || tx.amount.trim() === "";
@@ -2982,7 +2963,7 @@ function recordTransactionsFromAI(chatId, transactions) {
     var allocation = "Chi tiêu thiết yếu";
     
     
-    var sequenceNumber = addTransactionData(userId, date, description, amount, allocation, transactionType, "");
+    var sequenceNumber = addTransactionData(userId, date, description, amount, allocation, transactionType, "", chatType, senderName);
     
     
     if (transactionType === "ThuNhap") {
@@ -3025,9 +3006,11 @@ function doPost(e) {
     Logger.log("Request contents: " + JSON.stringify(contents));
 
     if (contents.callback_query) {
-      handleCallbackQuery(contents.callback_query);
+      const chatType = contents.callback_query.message.chat.type;
+      handleCallbackQuery({ ...contents.callback_query, chatType: chatType });
     } else if (contents.message) {
-      handleMessage(contents.message);
+      const chatType = contents.message.chat.type;
+      handleMessage({ ...contents.message, chatType: chatType });
     }
   } catch (err) {
     Logger.log("Error in doPost: " + err.toString());
@@ -3042,10 +3025,11 @@ function handleCallbackQuery(callbackQuery) {
     chatId: callbackQuery.from.id,
     userName: callbackQuery.from.first_name,
     data: callbackQuery.data,
-    messageId: callbackQuery.message.message_id
+    messageId: callbackQuery.message.message_id,
+    chatType: callbackQuery.chatType // Add chatType to context
   };
   
-  Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId);
+  Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType);
 
   // Route to specific handlers based on callback data
   if (context.data === 'connect_email') {
@@ -3141,15 +3125,16 @@ function handleMessage(message) {
     chatId: message.chat.id,
     userName: message.from.first_name,
     text: message.text,
-    message: message // Pass full message object if needed
+    message: message, // Pass full message object if needed
+    chatType: message.chat.type // Add chatType to context
   };
 
-  Logger.log("MESSAGE: " + context.text + " from user " + context.chatId);
+  Logger.log("MESSAGE: " + context.text + " from user " + context.chatId + " in chat type: " + context.chatType);
 
   // Handle voice messages with loading indicator
   if (message.voice) {
     sendLoadingMessage(context.chatId, "xử lý tin nhắn voice");
-    processVoiceMessage(message.voice.file_id, context.chatId);
+    processVoiceMessage(message.voice.file_id, context);
     return;
   }
 
@@ -3163,6 +3148,8 @@ function handleMessage(message) {
   // Route commands and text
   if (context.text === '/start') {
     processStartCommand(context);
+  } else if (context.text === '/startgroup') {
+    processStartGroupCommand(context);
   } else if (context.text === '/menu') {
     processMenuCommand(context);
   } else if (context.text === '/help' || context.text === '/commands') {
@@ -3170,15 +3157,15 @@ function handleMessage(message) {
   } else if (context.text === '/tongtien') {
     processShowTotalMoney(context.chatId);
   } else if (context.text === '/tongchi') {
-    processShowTotalExpenseCommand(context.chatId);
+    processShowTotalExpenseCommand(context);
   } else if (context.text === '/tongthunhap') {
-    sendTotalIncomeSummary(context.chatId, context.chatId);
+    sendTotalIncomeSummary(context);
   } else if (context.text === '/xemhu') {
     sendLoadingMessage(context.chatId, "tính toán số dư các hũ");
-    sendTotalPhanboSummary(context.chatId, context.chatId);
+    sendTotalPhanboSummary(context);
   } else if (context.text === '/xemnhan') {
     sendLoadingMessage(context.chatId, "tính toán chi tiêu theo nhãn");
-    sendTotalSubCategorySummary(context.chatId, context.chatId);
+    sendTotalSubCategorySummary(context);
   } else if (context.text === '/tile' || context.text === '/tylе') {
     sendPercentageSelectionMenu(context.chatId, context.chatId);
   } else if (context.text === '/biеudo' || context.text === '/chart') {
@@ -3503,7 +3490,7 @@ function generateAmountSuggestion(originalText, description, amountStr, defaultT
  * @param {object} transactionData - Dữ liệu giao dịch đã parse
  * @param {number} messageId - ID tin nhắn để edit (optional)
  */
-function initiateTransactionProcess(chatId, transactionData, messageId = null) {
+function initiateTransactionProcess(chatId, transactionData, messageId = null, chatType = 'private', senderName = null) {
   try {
     const tempTransaction = {
       userId: chatId,
@@ -3511,7 +3498,9 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null) {
       description: transactionData.description,
       amount: transactionData.amount,
       allocation: "Chi tiêu thiết yếu", // Default allocation
-      type: transactionData.type
+      type: transactionData.type,
+      chatType: chatType, // Add chatType to tempTransaction
+      senderName: senderName // Add senderName to tempTransaction
     };
     
     // Lưu transaction tạm vào cache
@@ -3703,7 +3692,9 @@ function processSubcategorySelection(context) {
         tempTransaction.amount, 
         allocation, 
         tempTransaction.type,
-        subCategory
+        subCategory,
+        context.chatType,
+        context.userName
       );
       
       // Lưu thông tin giao dịch vừa tạo để có thể chỉnh sửa
@@ -3784,7 +3775,7 @@ function processShowTotalExpenses(context) {
 
 function processShowTotalIncome(context) {
   try {
-    sendTotalIncomeSummary(context.chatId, context.chatId);
+    sendTotalIncomeSummary(context);
   } catch (err) {
     Logger.log("Error in processShowTotalIncome: " + err.toString());
     sendText(context.chatId, "❌ Đã có lỗi xảy ra khi tính tổng thu nhập. Vui lòng thử lại.");
@@ -3831,7 +3822,7 @@ function processShowAllocationBalances(context) {
     if (context.messageId) {
       editText(context.chatId, context.messageId, "⏳ Đang tính toán số dư các hũ...", null);
     }
-    sendTotalPhanboSummary(context.chatId, context.chatId, context.messageId);
+    sendTotalPhanboSummary(context); // Updated to pass context directly
   } catch (err) {
     Logger.log("Error in processShowAllocationBalances: " + err.toString());
     editText(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi tính số dư các hũ. Vui lòng thử lại.", null);
@@ -3877,14 +3868,14 @@ function processMenuCommand(context) {
   }
 }
 
-function processShowTotalMoney(chatId) {
-  const currentBalance = getCurrentBalance(chatId);
-  sendText(chatId, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
+function processShowTotalMoney(context) {
+  const currentBalance = getCurrentBalance(context.chatId);
+  sendText(context.chatId, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
 }
 
-function processShowTotalExpenseCommand(chatId) {
-  const totalExpenses = getTotalAmountByType(chatId, TRANSACTION_TYPE.EXPENSE);
-  sendText(chatId, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
+function processShowTotalExpenseCommand(context) {
+  const totalExpenses = getTotalAmountByType(context.chatId, TRANSACTION_TYPE.EXPENSE);
+  sendText(context.chatId, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
 }
 
 /**
@@ -3916,7 +3907,8 @@ function processQuickExpenseCommand(context) {
     const parseResult = parseTransactionText(input, TRANSACTION_TYPE.EXPENSE);
     
     if (parseResult.success) {
-      initiateTransactionProcess(context.chatId, parseResult);
+      // Pass chatType and userName to initiateTransactionProcess
+      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -3936,7 +3928,7 @@ function processQuickIncomeCommand(context) {
     const parseResult = parseTransactionText(input, TRANSACTION_TYPE.INCOME);
     
     if (parseResult.success) {
-      initiateTransactionProcess(context.chatId, parseResult);
+      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -3955,7 +3947,7 @@ function processTransactionText(context) {
     const parseResult = parseTransactionText(context.text);
     
     if (parseResult.success) {
-      initiateTransactionProcess(context.chatId, parseResult);
+      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -3976,7 +3968,8 @@ function processTransactionHistoryCommand(context) {
       chatId: context.chatId,
       userName: context.userName,
       data: 'history',
-      messageId: null // Will start fresh
+      messageId: null, // Will start fresh
+      chatType: context.chatType // Add chatType to pagination context
     };
     
     // Call pagination function directly
@@ -4411,4 +4404,56 @@ function getSpreadsheetId(userId) {
     }
   }
   return null; // Should not happen if getSheet is called first
+}
+
+/**
+ * Handles the /startgroup command to initialize bot for a group chat.
+ */
+function processStartGroupCommand(context) {
+  try {
+    // Ensure it's a group chat
+    if (context.chatType !== 'group' && context.chatType !== 'supergroup') {
+      sendText(context.chatId, "Lệnh này chỉ có thể được sử dụng trong nhóm chat.");
+      return;
+    }
+
+    sendLoadingMessage(context.chatId, "khởi tạo bot cho nhóm của bạn");
+
+    // Use the updated getSheet to create a group spreadsheet
+    // getSheet(entityId, entityType, senderId = null)
+    const groupSpreadsheet = getSheet(context.chatId, context.chatType, context.message.from.id);
+
+    if (groupSpreadsheet) {
+      const welcomeMessage = `🎉 Chào mừng đến với MoneyNe Bot, nhóm **${context.message.chat.title}**!
+` +
+                             `Tôi sẽ giúp cả nhóm quản lý thu chi chung.
+` +
+                             `
+` +
+                             `Để bắt đầu, mọi người có thể dùng các lệnh sau:
+` +
+                             `
+` +
+                             `*   `/chi nội dung số_tiền` (VD: `/chi ăn trưa 50000`)
+` +
+                             `*   `/thu nội dung số_tiền` (VD: `/thu góp quỹ 100000`)
+` +
+                             `
+` +
+                             `Mỗi giao dịch sẽ được ghi nhận kèm theo tên của người gửi.
+` +
+                             `
+` +
+                             `Bạn có thể xem tổng quan bằng lệnh `/tongtien` hoặc `/lichsu`.
+` +
+                             `Chúc nhóm bạn quản lý tài chính hiệu quả!`;
+      updateLoadingMessage(context.chatId, context.messageId, welcomeMessage);
+    } else {
+      updateLoadingMessage(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi khởi tạo bot cho nhóm. Vui lòng thử lại.");
+    }
+
+  } catch (err) {
+    Logger.log("Error in processStartGroupCommand: " + err.toString());
+    updateLoadingMessage(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi khởi tạo bot cho nhóm. Vui lòng thử lại.");
+  }
 }
