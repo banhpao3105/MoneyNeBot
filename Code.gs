@@ -300,6 +300,9 @@ function addTransactionData(userId, date, description, amount, allocation, type,
   // Thêm STT vào đầu row
   sheet.appendRow([sequenceNumber, date, description, amount, allocation, type, subCategory]);
   
+  // Check for budget alerts after adding transaction
+  checkAndSendBudgetAlerts(userId, allocation, subCategory, amount, type);
+  
   // Trả về sequence number để hiển thị trong telegram
   return sequenceNumber;
 }
@@ -2890,7 +2893,7 @@ function processVoiceMessage(fileId, chatId) {
   var generatePayload = JSON.stringify({
     contents: [{
       parts: [
-        { "text": 'Bạn là một AI Chi tiêu. Hãy trích xuất thông tin về số tiền, nội dung và loại giao dịch (type luôn đặt là: Thu nhập hoặc Chi tiêu) từ giọng nói. Lưu ý: nhận diện các biểu thức rút gọn và các từ lóng/địa phương liên quan đến tiền tệ. Ví dụ: “củ” tương đương với “triệu", “k hoặc ca hoặc ka” tương đương với “trăm”, “nghìn” hoặc “ngàn” tương đương với “nghìn”, “ty” hoặc “tỉ” tương đương với “tỷ”, “lít” tương đương với “trăm” (các từ rút gọn này chỉ áp dụng khi đi kèm với giá tiền). Nếu không nghe rõ hoặc không nhận diện được số tiền, hãy trả về rỗng {}. Tuyệt đối không được tự suy đoán hay chế thông tin.' },
+        { "text": 'Bạn là một AI Chi tiêu. Hãy trích xuất thông tin về số tiền, nội dung và loại giao dịch (type luôn đặt là: Thu nhập hoặc Chi tiêu) từ giọng nói. Lưu ý: nhận diện các biểu thức rút gọn và các từ lóng/địa phương liên quan đến tiền tệ. Ví dụ: "củ" tương đương với "triệu", "k hoặc ca hoặc ka" tương đương với "trăm", "nghìn" hoặc "ngàn" tương đương với "nghìn", "ty" hoặc "tỉ" tương đương với "tỷ", "lít" tương đương với "trăm" (các từ rút gọn này chỉ áp dụng khi đi kèm với giá tiền). Nếu không nghe rõ hoặc không nhận diện được số tiền, hãy trả về rỗng {}. Tuyệt đối không được tự suy đoán hay chế thông tin.' },
         { "file_data": { "mime_type": mimeType, "file_uri": fileUri } }
       ]
     }],
@@ -3110,6 +3113,18 @@ function handleCallbackQuery(callbackQuery) {
     processViewAllocationSubs(context);
   } else if (context.data === 'back_to_main_view') {
     processBackToMainView(context);
+  } else if (context.data === 'export_this_month') {
+    processExportRequest(context, 'this_month');
+  } else if (context.data === 'export_last_month') {
+    processExportRequest(context, 'last_month');
+  } else if (context.data === 'export_all_time') {
+    processExportRequest(context, 'all_time');
+  } else if (context.data === 'view_budget_status') {
+    processViewBudgetStatus(context);
+  } else if (context.data === 'add_edit_budget') {
+    processAddEditBudget(context);
+  } else if (context.data === 'delete_budget') {
+    processDeleteBudget(context);
   } else {
     Logger.log("Unhandled callback: " + context.data);
   }
@@ -3184,6 +3199,10 @@ function handleMessage(message) {
     processDeleteAll(context.chatId);
   } else if (context.text.startsWith("/history")) {
     processHistoryCommand(context.chatId, context.text);
+  } else if (context.text === '/export') {
+    processExportCommand(context);
+  } else if (context.text === '/budget' || context.text === '/ngansach') {
+    processBudgetCommand(context);
   } else if (context.text.includes(" + ") || context.text.includes(" - ")) {
     processTransactionText(context);
   } else {
@@ -4041,4 +4060,355 @@ function checkEmail() {
       Logger.log("Bỏ qua hàng rỗng ở dòng: " + (k + 1));
     }
   }
+}
+
+/**
+ * Handle the /export command to show export options.
+ */
+function processExportCommand(context) {
+  try {
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: "Tháng này", callback_data: "export_this_month" }],
+        [{ text: "Tháng trước", callback_data: "export_last_month" }],
+        [{ text: "Toàn bộ lịch sử", callback_data: "export_all_time" }],
+        [{ text: "⬅️ Quay lại menu chính", callback_data: "back_to_main_menu" }]
+      ]
+    };
+    sendText(context.chatId, "Bạn muốn xuất báo cáo trong khoảng thời gian nào?", keyboard);
+  } catch (err) {
+    Logger.log("Error in processExportCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi hiển thị tùy chọn xuất báo cáo. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * Handles the export request based on the selected period.
+ */
+function processExportRequest(context, period) {
+  try {
+    sendLoadingMessage(context.chatId, `xuất báo cáo ${period === 'this_month' ? 'tháng này' : period === 'last_month' ? 'tháng trước' : 'toàn bộ lịch sử'}`);
+    generateAndSendReport(context, period);
+  } catch (err) {
+    Logger.log("Error in processExportRequest: " + err.toString());
+    updateLoadingMessage(context.chatId, context.messageId, `❌ Đã có lỗi xảy ra khi xuất báo cáo ${period === 'this_month' ? 'tháng này' : period === 'last_month' ? 'tháng trước' : 'toàn bộ lịch sử'}. Vui lòng thử lại.`);
+  }
+}
+
+/**
+ * Generates a CSV report and sends it to the user via Telegram.
+ */
+function generateAndSendReport(context, period) {
+  const sheet = getSheet(context.chatId);
+  const allData = sheet.getDataRange().getValues();
+
+  if (allData.length < 2) {
+    updateLoadingMessage(context.chatId, context.messageId, "📊 Không có dữ liệu giao dịch để xuất báo cáo.");
+    return;
+  }
+
+  const header = allData[0];
+  let transactions = allData.slice(1); // Exclude header row
+
+  // Filter by period
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  if (period === 'this_month') {
+    transactions = transactions.filter(row => {
+      const date = new Date(row[1]); // Assuming date is in column B (index 1)
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    });
+  } else if (period === 'last_month') {
+    let lastMonth = currentMonth - 1;
+    let lastMonthYear = currentYear;
+    if (lastMonth < 0) {
+      lastMonth = 11; // December
+      lastMonthYear -= 1;
+    }
+    transactions = transactions.filter(row => {
+      const date = new Date(row[1]);
+      return date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear;
+    });
+  }
+
+  if (transactions.length === 0) {
+    updateLoadingMessage(context.chatId, context.messageId, `📊 Không có giao dịch nào trong khoảng thời gian đã chọn.`);
+    return;
+  }
+
+  // Format data for CSV
+  let csvContent = header.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + '\n';
+  transactions.forEach(row => {
+    const formattedRow = row.map((cell, index) => {
+      if (index === 1) { // Date column
+        return `"${new Date(cell).toLocaleDateString('vi-VN')}"`;
+      } else if (typeof cell === 'string') {
+        return `"${cell.replace(/"/g, '""')}"`;
+      } else {
+        return `"${cell}"`;
+      }
+    });
+    csvContent += formattedRow.join(',') + '\n';
+  });
+
+  const fileName = `MoneyNe_Report_${context.chatId}_${new Date().getTime()}.csv`;
+  let file = DriveApp.createFile(fileName, csvContent, MimeType.CSV);
+
+  const telegramUrl = `https://api.telegram.org/bot${telegramToken}`; // Assuming telegramToken is available globally
+  const url = telegramUrl + "/sendDocument";
+  
+  const payload = {
+    method: "post",
+    payload: {
+      chat_id: String(context.chatId),
+      document: file.getBlob(),
+      caption: `📊 Đây là báo cáo thu chi của bạn (${period === 'this_month' ? 'Tháng này' : period === 'last_month' ? 'Tháng trước' : 'Toàn bộ'})!`,
+    }
+  };
+
+  UrlFetchApp.fetch(url, payload);
+
+  // Clean up: move the file to trash
+  DriveApp.getFileById(file.getId()).setTrashed(true);
+
+  updateLoadingMessage(context.chatId, context.messageId, `✅ Đã gửi báo cáo thành công!`);
+}
+
+/**
+ * Handles the /budget command to show budget options.
+ */
+function processBudgetCommand(context) {
+  try {
+    const keyboard = {
+      inline_keyboard: [
+        [{ text: "📊 Xem Tình hình Ngân sách", callback_data: "view_budget_status" }],
+        [{ text: "✏️ Thêm / Sửa Ngân sách", callback_data: "add_edit_budget" }],
+        [{ text: "🗑️ Xóa Ngân sách", callback_data: "delete_budget" }],
+        [{ text: "⬅️ Quay lại menu chính", callback_data: "back_to_main_menu" }]
+      ]
+    };
+    sendText(context.chatId, "Bạn muốn làm gì với ngân sách?", keyboard);
+  } catch (err) {
+    Logger.log("Error in processBudgetCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi hiển thị tùy chọn ngân sách. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * Handles the 'view_budget_status' callback.
+ */
+function processViewBudgetStatus(context) {
+  try {
+    sendLoadingMessage(context.chatId, "xem tình hình ngân sách");
+
+    const userSpreadsheet = SpreadsheetApp.openById(getSpreadsheetId(context.chatId));
+    const budgetsSheet = userSpreadsheet.getSheetByName('Budgets');
+
+    if (!budgetsSheet || budgetsSheet.getLastRow() < 2) {
+      updateLoadingMessage(context.chatId, context.messageId, "📊 Bạn chưa có ngân sách nào được thiết lập. Vui lòng thêm ngân sách trước.");
+      return;
+    }
+
+    const budgetData = budgetsSheet.getDataRange().getValues(); // ["Tháng", "Loại", "Tên", "Hạn Mức"]
+    const mainSheet = getSheet(context.chatId); // Get the main transaction sheet
+    const allTransactions = mainSheet.getDataRange().getValues(); // Get all transaction data
+    const currentMonthYear = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MM/yyyy");
+
+    let budgetReport = `📊 **Tình hình Ngân sách Tháng ${currentMonthYear}:**\n\n`;
+    let hasActiveBudgets = false;
+
+    for (let i = 1; i < budgetData.length; i++) {
+      const row = budgetData[i];
+      const month = row[0];
+      const budgetType = row[1];
+      const budgetName = row[2];
+      const limit = parseFloat(row[3]);
+
+      if (month === currentMonthYear && !isNaN(limit) && limit > 0) {
+        hasActiveBudgets = true;
+        const spent = calculateSpent(allTransactions, currentMonthYear, budgetType, budgetName);
+        const remaining = limit - spent;
+        const percentage = (spent / limit) * 100;
+
+        budgetReport += `**${budgetType} ${budgetName}:**\n`;
+        budgetReport += `   Hạn mức: ${formatNumberWithSeparator(limit)}đ\n`;
+        budgetReport += `   Đã chi: ${formatNumberWithSeparator(spent)}đ (${percentage.toFixed(1)}%)\n`;
+        budgetReport += `   Còn lại: ${formatNumberWithSeparator(remaining)}đ\n`;
+        budgetReport += `   ${createPercentageBar(percentage)}\n\n`;
+      }
+    }
+
+    if (!hasActiveBudgets) {
+      updateLoadingMessage(context.chatId, context.messageId, `📊 Không có ngân sách hoạt động cho Tháng ${currentMonthYear}.`);
+      return;
+    }
+
+    updateLoadingMessage(context.chatId, context.messageId, budgetReport);
+
+  } catch (err) {
+    Logger.log("Error in processViewBudgetStatus: " + err.toString());
+    updateLoadingMessage(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi xem tình hình ngân sách. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * Helper function to create a percentage bar for visual representation.
+ */
+function createPercentageBar(percentage) {
+  const barLength = 10; // Length of the bar in characters
+  const filledBlocks = Math.round(percentage / 10);
+  const emptyBlocks = barLength - filledBlocks;
+
+  let bar = "[";
+  for (let i = 0; i < filledBlocks; i++) {
+    bar += "█";
+  }
+  for (let i = 0; i < emptyBlocks; i++) {
+    bar += "░";
+  }
+  bar += "]";
+
+  return bar;
+}
+
+/**
+ * Handles the 'add_edit_budget' callback.
+ */
+function processAddEditBudget(context) {
+  try {
+    sendText(context.chatId, "Chức năng thêm/sửa ngân sách đang được phát triển.");
+  } catch (err) {
+    Logger.log("Error in processAddEditBudget: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi thêm/sửa ngân sách. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * Handles the 'delete_budget' callback.
+ */
+function processDeleteBudget(context) {
+  try {
+    sendText(context.chatId, "Chức năng xóa ngân sách đang được phát triển.");
+  } catch (err) {
+    Logger.log("Error in processDeleteBudget: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi xóa ngân sách. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * Checks budgets and sends alerts if thresholds are crossed.
+ * Only for EXPENSE transactions.
+ */
+function checkAndSendBudgetAlerts(userId, allocation, subCategory, newAmount, type) {
+  if (type !== TRANSACTION_TYPE.EXPENSE) {
+    return; // Only check budgets for expenses
+  }
+
+  try {
+    const userSpreadsheet = SpreadsheetApp.openById(getSpreadsheetId(userId));
+    const budgetsSheet = userSpreadsheet.getSheetByName('Budgets');
+    if (!budgetsSheet || budgetsSheet.getLastRow() < 2) {
+      Logger.log("No budget data found for user " + userId);
+      return;
+    }
+
+    const budgetData = budgetsSheet.getDataRange().getValues(); // ["Tháng", "Loại", "Tên", "Hạn Mức"]
+    const currentMonthYear = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "MM/yyyy");
+
+    let allocationBudget = 0;
+    let subCategoryBudget = 0;
+
+    // Find relevant budgets for current month
+    for (let i = 1; i < budgetData.length; i++) {
+      const row = budgetData[i];
+      const month = row[0];
+      const budgetType = row[1];
+      const budgetName = row[2];
+      const limit = parseFloat(row[3]);
+
+      if (month === currentMonthYear && !isNaN(limit)) {
+        if (budgetType === 'Hũ' && budgetName === allocation) {
+          allocationBudget = limit;
+        } else if (budgetType === 'Nhãn' && budgetName === subCategory) {
+          subCategoryBudget = limit;
+        }
+      }
+    }
+
+    const mainSheet = getSheet(userId); // Get the main transaction sheet
+    const allTransactions = mainSheet.getDataRange().getValues(); // Get all transaction data
+
+    // Check allocation budget
+    if (allocationBudget > 0) {
+      const spentOnAllocation = calculateSpent(allTransactions, currentMonthYear, 'Hũ', allocation);
+      sendBudgetAlert(userId, allocation, allocationBudget, spentOnAllocation, 'Hũ');
+    }
+
+    // Check subCategory budget
+    if (subCategoryBudget > 0) {
+      const spentOnSubCategory = calculateSpent(allTransactions, currentMonthYear, 'Nhãn', subCategory);
+      sendBudgetAlert(userId, subCategory, subCategoryBudget, spentOnSubCategory, 'Nhãn');
+    }
+  } catch (err) {
+    Logger.log("Error in checkAndSendBudgetAlerts: " + err.toString());
+  }
+}
+
+/**
+ * Helper function to calculate total spent for a given budget item.
+ */
+function calculateSpent(transactionsData, monthYear, budgetType, budgetName) {
+  let totalSpent = 0;
+  for (let i = 1; i < transactionsData.length; i++) { // Start from 1 to skip header
+    const row = transactionsData[i];
+    const date = new Date(row[1]); // Date column (index 1)
+    const type = row[5]; // Type column (index 5) - "ChiTieu" or "ThuNhap"
+    const amount = parseFloat(row[3]); // Amount column (index 3)
+    const allocation = row[4]; // Allocation column (index 4)
+    const subCategory = row[6]; // SubCategory column (index 6)
+
+    const transactionMonthYear = Utilities.formatDate(date, Session.getScriptTimeZone(), "MM/yyyy");
+
+    if (transactionMonthYear === monthYear && type === TRANSACTION_TYPE.EXPENSE && !isNaN(amount)) {
+      if (budgetType === 'Hũ' && allocation === budgetName) {
+        totalSpent += amount;
+      } else if (budgetType === 'Nhãn' && subCategory === budgetName) {
+        totalSpent += amount;
+      }
+    }
+  }
+  return totalSpent;
+}
+
+/**
+ * Helper function to send budget alerts.
+ */
+function sendBudgetAlert(userId, budgetName, limit, spent, budgetType) {
+  const percentage = (spent / limit) * 100;
+  let alertMessage = '';
+
+  if (percentage >= 100) {
+    alertMessage = `🚨 Báo động: Bạn đã VƯỢT ngân sách cho '${budgetName}' (${budgetType}) tháng này! Đã chi tiêu ${formatNumberWithSeparator(spent)}đ / ${formatNumberWithSeparator(limit)}đ.`;
+  } else if (percentage >= 90) {
+    alertMessage = `⚠️ Cảnh báo: Bạn đã chi tiêu ${Math.round(percentage)}% ngân sách cho '${budgetName}' (${budgetType}) tháng này! Đã chi tiêu ${formatNumberWithSeparator(spent)}đ / ${formatNumberWithSeparator(limit)}đ.`;
+  }
+
+  if (alertMessage) {
+    sendText(userId, alertMessage);
+  }
+}
+
+// Helper to get spreadsheet ID from userId (duplicate logic from getSheet, but necessary for checkAndSendBudgetAlerts)
+function getSpreadsheetId(userId) {
+  const usersSpreadsheet = SpreadsheetApp.openById(main_sheet);
+  const usersSheet = usersSpreadsheet.getSheetByName('UserList'); 
+  const userData = usersSheet.getDataRange().getValues();
+  for (let i = 0; i < userData.length; i++) {
+    if (userData[i][0] === userId) {
+      return userData[i][1];
+    }
+  }
+  return null; // Should not happen if getSheet is called first
 }
