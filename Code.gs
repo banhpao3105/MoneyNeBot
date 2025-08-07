@@ -3140,14 +3140,16 @@ function handleCallbackQuery(callbackQuery) {
  */
 function handleMessage(message) {
   const context = {
-    chatId: message.chat.id,
+    chatId: message.chat.id,           // Chat ID (group ID for groups, user ID for private)
+    userId: message.from.id,           // User ID (always the sender's ID)
+    groupChatId: message.chat.type === 'private' ? null : message.chat.id, // Only set for groups
     userName: message.from.first_name,
     text: message.text,
     message: message, // Pass full message object if needed
     chatType: message.chat.type // Add chatType to context
   };
 
-  Logger.log("MESSAGE: " + context.text + " from user " + context.chatId + " in chat type: " + context.chatType);
+  Logger.log("MESSAGE: " + context.text + " from user " + context.userId + " (chat: " + context.chatId + ") in chat type: " + context.chatType);
 
   // Handle voice messages with loading indicator
   if (message.voice) {
@@ -3972,8 +3974,7 @@ function processMenuCommand(context) {
 }
 
 function processShowTotalMoney(context) {
-  // For group chat, use group ID to get transactions
-  const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const entityId = context.chatId;
   const currentBalance = getCurrentBalance(entityId);
   
   let message = "💰 Số tiền hiện tại: " + formatNumberWithSeparator(currentBalance);
@@ -4035,8 +4036,8 @@ function processQuickExpenseCommand(context) {
     
     if (parseResult.success) {
       // For group chat, we need both chat ID (group) and user ID (sender)
-      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
-      const chatId = context.chatId; // Always use this for sending messages
+      const userId = context.userId; // Always use actual user ID
+      const chatId = context.chatId;  // Always use chat ID for sending messages
       
       // Pass all needed parameters to initiateTransactionProcess
       initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
@@ -4060,8 +4061,8 @@ function processQuickIncomeCommand(context) {
     
     if (parseResult.success) {
       // For group chat, we need both chat ID (group) and user ID (sender)
-      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
-      const chatId = context.chatId; // Always use this for sending messages
+      const userId = context.userId; // Always use actual user ID
+      const chatId = context.chatId;  // Always use chat ID for sending messages
       
       // Pass all needed parameters to initiateTransactionProcess
       initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
@@ -4084,8 +4085,8 @@ function processTransactionText(context) {
     
     if (parseResult.success) {
       // For group chat, we need both chat ID (group) and user ID (sender)
-      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
-      const chatId = context.chatId; // Always use this for sending messages
+      const userId = context.userId; // Always use actual user ID
+      const chatId = context.chatId;  // Always use chat ID for sending messages
       
       // Pass all needed parameters to initiateTransactionProcess
       initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
