@@ -442,6 +442,1037 @@ const menuchi = {
 
 // =================== LEGACY FUNCTIONS REMOVED ===================
 // doPostOld function (1063 lines) was removed during Router Pattern refactoring
+        // Format mới ngắn: sub_0_1 (allocationIndex_subIndex)
+        var parts = data.split('_');
+        if (parts.length >= 3) {
+          var allocationIndex = parseInt(parts[1]);
+          var subCategoryIndex = parseInt(parts[2]);
+          
+          if (!isNaN(allocationIndex) && !isNaN(subCategoryIndex) && allocationIndex >= 0 && subCategoryIndex >= 0) {
+            allocation = allocations[allocationIndex];
+            if (allocation && subCategories[allocation] && subCategories[allocation][subCategoryIndex]) {
+              subCategory = subCategories[allocation][subCategoryIndex];
+            }
+          }
+        }
+      } else {
+        // Format cũ dài: subcategory_AllocationName_SubCategoryName
+        var parts = data.split('_');
+        allocation = parts[1];
+        subCategory = parts.slice(2).join('_');
+      }
+      
+      // Validation: Đảm bảo allocation và subCategory được parse thành công
+      if (!allocation || !subCategory) {
+        editText(chatId, messageId, "❌ Lỗi xử lý lựa chọn. Vui lòng thử lại.", null);
+        return;
+      }
+      
+      // Lấy thông tin giao dịch tạm từ cache
+      var tempTransaction = getTempTransaction(chatId);
+      if (tempTransaction) {
+        // Lưu giao dịch với subcategory và lấy sequence number
+        var sequenceNumber = addTransactionData(
+          chatId, 
+          tempTransaction.date, 
+          tempTransaction.description, 
+          tempTransaction.amount, 
+          allocation, 
+          tempTransaction.type,
+          subCategory
+        );
+        
+        // Lưu thông tin giao dịch vừa tạo để có thể chỉnh sửa
+        var transactionId = 'tx_' + Date.now(); // Unique ID cho transaction
+        var transactionInfo = {
+          userId: chatId,
+          transactionId: transactionId,
+          date: tempTransaction.date,
+          description: tempTransaction.description,
+          amount: tempTransaction.amount,
+          allocation: allocation,
+          type: tempTransaction.type,
+          subCategory: subCategory,
+          sequenceNumber: sequenceNumber, // Thêm STT vào transaction info
+          rowIndex: getLastRowIndex(chatId) // Lấy index của row vừa thêm
+        };
+        saveTransactionForEdit(chatId, transactionInfo, transactionId);
+        
+        // Xóa cache tạm
+        clearTempTransaction(chatId);
+        
+        // Thông báo thành công với keyboard chỉnh sửa (bao gồm STT)
+        var typeText = tempTransaction.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var editKeyboard = createEditKeyboard(transactionId);
+        
+        editText(chatId, messageId,
+          "✅ Giao dịch #" + sequenceNumber + " - Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+          " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          " vào hũ " + allocation + " với nhãn " + subCategory,
+          editKeyboard
+        );
+      }
+      return;
+    } else if (data === 'edit_transaction' || data.startsWith('edit_transaction_')) {
+      // Xử lý chỉnh sửa giao dịch
+      Logger.log("DEBUG: edit_transaction callback received for user: " + chatId);
+      var transactionId = data.startsWith('edit_transaction_') ? data.replace('edit_transaction_', '') : null;
+      Logger.log("DEBUG: Transaction ID: " + transactionId);
+      var transactionInfo = getTransactionForEdit(chatId, transactionId);
+      Logger.log("DEBUG: transactionInfo from cache: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Hiển thị keyboard chọn hũ mới với transactionId
+        var allocationKeyboard = createAllocationKeyboard(transactionInfo.transactionId);
+        Logger.log("DEBUG: Allocation keyboard created with " + allocationKeyboard.inline_keyboard.length + " rows");
+        
+        // Debug keyboard content
+        for (var i = 0; i < allocationKeyboard.inline_keyboard.length; i++) {
+          var row = allocationKeyboard.inline_keyboard[i];
+          Logger.log("Keyboard row " + (i+1) + ": " + JSON.stringify(row));
+        }
+        
+        editText(chatId, messageId,
+          "🔄 Chỉnh sửa giao dịch: " + transactionInfo.description + 
+          " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          "\n\nVui lòng chọn hũ mới:",
+          allocationKeyboard
+        );
+        Logger.log("DEBUG: Edit message sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found in cache");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
+      }
+      return;
+    } else if (data.startsWith('edit_allocation_') || data.startsWith('edit_alloc_')) {
+      // Xử lý chọn hũ mới khi chỉnh sửa (format mới ngắn hơn)
+      Logger.log("DEBUG: edit_allocation callback: " + data);
+      
+      // Parse transactionId và allocation index từ callback_data
+      var parts = data.split('_');
+      var transactionId = null;
+      var allocationIndex = -1;
+      var allocation = '';
+      
+      if (data.startsWith('edit_alloc_') && parts.length >= 4 && parts[2] === 'tx') {
+        // Format mới: edit_alloc_tx_123456_0
+        // parts = ['edit', 'alloc', 'tx', '123456', '0']
+        transactionId = parts[2] + '_' + parts[3]; // Tái tạo 'tx_123456'
+        allocationIndex = parseInt(parts[4]);
+        allocation = allocations[allocationIndex]; // Lấy tên từ index
+      } else if (data.startsWith('edit_allocation_') && parts.length > 3 && parts[2] === 'tx') {
+        // Format cũ: edit_allocation_tx_123456_AllocationName (backward compatibility)
+        transactionId = parts[2] + '_' + parts[3];
+        allocation = parts.slice(4).join('_');
+      } else {
+        // Format cũ nhất: edit_allocation_AllocationName (backward compatibility)
+        allocation = parts.slice(2).join('_');
+      }
+      
+      Logger.log("DEBUG: Parsed transactionId: " + transactionId + ", allocationIndex: " + allocationIndex + ", allocation: " + allocation);
+      Logger.log("DEBUG: ChatId: " + chatId);
+      
+      // Luôn sử dụng transactionId nếu có, không fallback sang userId
+      var transactionInfo = null;
+      if (transactionId) {
+        transactionInfo = getTransactionForEdit(chatId, transactionId);
+      } else {
+        // Backward compatibility - chỉ khi không có transactionId
+        transactionInfo = getTransactionForEdit(chatId);
+      }
+      Logger.log("DEBUG: Retrieved transaction for edit: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Cập nhật allocation
+        transactionInfo.allocation = allocation;
+        saveTransactionForEdit(chatId, transactionInfo, transactionInfo.transactionId);
+        Logger.log("DEBUG: Updated allocation to: " + allocation);
+        
+        // Hiển thị keyboard chọn nhãn con cho edit
+        var keyboard = createSubCategoryKeyboard(allocation, true, transactionInfo.transactionId, allocationIndex);
+        editText(chatId, messageId,
+          "Đã chọn hũ: " + allocation + 
+          "\nVui lòng chọn nhãn cụ thể:",
+          keyboard
+        );
+        Logger.log("DEBUG: Subcategory keyboard sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found for edit_allocation");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
+      }
+      return;
+    } else if (data.startsWith('edit_subcategory_') || data.startsWith('edit_sub_')) {
+      // Xử lý chọn nhãn con mới khi chỉnh sửa
+      Logger.log("DEBUG: edit_subcategory callback: " + data);
+      var parts = data.split('_');
+      var transactionId = null;
+      var allocation = '';
+      var subCategory = '';
+      var allocationIndex = -1;
+      var subCategoryIndex = -1;
+      
+      if (data.startsWith('edit_sub_') && parts.length >= 6 && parts[2] === 'tx') {
+        // Format mới ngắn: edit_sub_tx_123456_0_1 (allocationIndex_subCategoryIndex)
+        // parts = ['edit', 'sub', 'tx', '123456', '0', '1']
+        transactionId = parts[2] + '_' + parts[3]; // Tái tạo 'tx_123456'
+        allocationIndex = parseInt(parts[4]);
+        subCategoryIndex = parseInt(parts[5]);
+        allocation = allocations[allocationIndex];
+        subCategory = subCategories[allocation][subCategoryIndex];
+      } else if (data.startsWith('edit_subcategory_') && parts.length > 4 && parts[2] === 'tx') {
+        // Format cũ dài: edit_subcategory_tx_123456_AllocationName_SubCategory
+        transactionId = parts[2] + '_' + parts[3];
+        allocation = parts[4];
+        subCategory = parts.slice(5).join('_');
+      } else {
+        // Format cũ nhất: edit_subcategory_AllocationName_SubCategory (backward compatibility)
+        allocation = parts[2];
+        subCategory = parts.slice(3).join('_');
+      }
+      
+      Logger.log("DEBUG: Parsed transactionId: " + transactionId + ", allocationIndex: " + allocationIndex + ", subCategoryIndex: " + subCategoryIndex);
+      Logger.log("DEBUG: allocation: " + allocation + ", subCategory: " + subCategory);
+      Logger.log("DEBUG: ChatId: " + chatId);
+      
+      // Luôn sử dụng transactionId nếu có, không fallback sang userId  
+      var transactionInfo = null;
+      if (transactionId) {
+        transactionInfo = getTransactionForEdit(chatId, transactionId);
+      } else {
+        // Backward compatibility - chỉ khi không có transactionId
+        transactionInfo = getTransactionForEdit(chatId);
+      }
+      Logger.log("DEBUG: Retrieved transaction: " + JSON.stringify(transactionInfo));
+      
+      if (transactionInfo) {
+        // Cập nhật subcategory
+        transactionInfo.allocation = allocation;
+        transactionInfo.subCategory = subCategory;
+        Logger.log("DEBUG: Updated transaction info: " + JSON.stringify(transactionInfo));
+        
+        // Cập nhật giao dịch trong sheet
+        updateTransactionInSheet(transactionInfo);
+        Logger.log("DEBUG: Updated transaction in sheet");
+        
+        // Không xóa cache để có thể chỉnh sửa tiếp
+        Logger.log("DEBUG: Keeping cache for future edits");
+        
+        // Lưu lại thông tin giao dịch vừa cập nhật để có thể chỉnh sửa tiếp
+        saveTransactionForEdit(chatId, transactionInfo, transactionInfo.transactionId);
+        
+        // Thông báo thành công với nút chỉnh sửa
+        var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var editKeyboard = createEditKeyboard(transactionInfo.transactionId);
+        
+        editText(chatId, messageId,
+          "✅ Đã cập nhật " + typeText + ": " + transactionInfo.description + 
+          " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+          " vào hũ " + allocation + " với nhãn " + subCategory,
+          editKeyboard
+        );
+        Logger.log("DEBUG: Success message with edit button sent");
+      } else {
+        Logger.log("DEBUG: No transaction info found for edit_subcategory");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
+      }
+      return;
+    } else if (data.startsWith('allocation_')) {
+      // Xử lý chọn hũ cho transaction mới
+      Logger.log("DEBUG: allocation callback: " + data);
+      
+      // Parse allocation index từ callback_data: allocation_0
+      var parts = data.split('_');
+      var allocationIndex = parseInt(parts[1]);
+      var allocation = allocations[allocationIndex];
+      
+      Logger.log("DEBUG: Parsed allocationIndex: " + allocationIndex + ", allocation: " + allocation);
+      
+      // Lấy thông tin transaction tạm từ cache
+      var tempTransaction = getTempTransaction(chatId);
+      Logger.log("DEBUG: Retrieved temp transaction: " + JSON.stringify(tempTransaction));
+      
+      if (tempTransaction) {
+        // Cập nhật allocation
+        tempTransaction.allocation = allocation;
+        saveTempTransaction(chatId, tempTransaction);
+        Logger.log("DEBUG: Updated temp transaction allocation to: " + allocation);
+        
+        // Hiển thị keyboard chọn nhãn con với allocationIndex
+        var allocationIndex = allocations.indexOf(allocation);
+        var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
+        editText(chatId, messageId,
+          (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+          tempTransaction.description + " " + 
+          formatNumberWithSeparator(tempTransaction.amount) + " vào hũ " + allocation + 
+          "\nVui lòng chọn nhãn cụ thể:",
+          keyboard
+        );
+        Logger.log("DEBUG: Subcategory keyboard sent for new transaction");
+      } else {
+        Logger.log("DEBUG: No temp transaction found for allocation selection");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.", null);
+      }
+      return;
+    } else if (data === 'back_to_allocation') {
+      // Xử lý nút "Quay lại" cho transaction mới
+      Logger.log("DEBUG: back_to_allocation callback");
+      
+      // Lấy thông tin transaction tạm từ cache
+      var tempTransaction = getTempTransaction(chatId);
+      Logger.log("DEBUG: Retrieved temp transaction: " + JSON.stringify(tempTransaction));
+      
+      if (tempTransaction) {
+        // Hiển thị lại keyboard chọn hũ
+        var keyboard = createAllocationKeyboard(null); // Không có transactionId cho transaction mới
+        editText(chatId, messageId,
+          "🔄 Quay lại chọn hũ\n" +
+          (tempTransaction.type === 'ThuNhap' ? 'Thu nhập: ' : 'Chi tiêu: ') + 
+          tempTransaction.description + " " + 
+          formatNumberWithSeparator(tempTransaction.amount) + 
+          "\n\nVui lòng chọn hũ:",
+          keyboard
+        );
+        Logger.log("DEBUG: Back to allocation keyboard sent");
+      } else {
+        Logger.log("DEBUG: No temp transaction found for back_to_allocation");
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch. Vui lòng nhập lại giao dịch của bạn.", null);
+      }
+      return;
+    } else if (data === 'cancel_new') {
+      // Hủy giao dịch mới
+      Logger.log("DEBUG: cancel_new callback");
+      
+      // Xóa temp transaction cache
+      clearTempTransaction(chatId);
+      Logger.log("DEBUG: Cleared temp transaction cache");
+      
+      // Thông báo hủy thành công
+      editText(chatId, messageId, "❌ Đã hủy giao dịch", null);
+      Logger.log("DEBUG: Cancel new transaction message sent");
+      return;
+    } else if (data.startsWith('cancel_edit_')) {
+      // Hủy chỉnh sửa giao dịch - trả về trạng thái xác nhận ban đầu
+      var transactionId = data.replace('cancel_edit_', '');
+      
+      // Lấy thông tin giao dịch từ cache TRƯỚC khi clear
+      var transactionInfo = getTransactionForEdit(chatId, transactionId);
+      
+      if (transactionInfo) {
+        // Tạo lại message xác nhận gốc với transaction info
+        var typeText = transactionInfo.type === "ThuNhap" ? "thu nhập" : "chi tiêu";
+        var editKeyboard = createEditKeyboard(transactionInfo.transactionId);
+        
+        // Hiển thị lại message xác nhận ban đầu (bao gồm STT)
+        editText(chatId, messageId,
+          "✅ Giao dịch #" + transactionInfo.sequenceNumber + " - Đã ghi nhận " + typeText + ": " + transactionInfo.description + 
+          " " + formatNumberWithSeparator(transactionInfo.amount) + 
+          " vào hũ " + transactionInfo.allocation + " với nhãn " + transactionInfo.subCategory,
+          editKeyboard
+        );
+        
+        // KHÔNG clear cache - để user có thể edit lại transaction này bao nhiêu lần cũng được
+        // clearTransactionForEdit(chatId, transactionId);
+      } else {
+        // Fallback nếu không tìm thấy transaction info
+        editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để khôi phục", null);
+      }
+      
+      return;
+    } else {
+      // Log unhandled callback
+      Logger.log("DEBUG: Unhandled callback in first block: " + data);
+      Logger.log("Available handlers: connect_email, bank_, subcategory_, edit_transaction, edit_allocation_, edit_subcategory_, cancel_new, cancel_edit_");
+    }
+  } else if (contents.message) {
+    chatId = contents.message.chat.id;
+    userName = contents.message.from.first_name;
+    var text = contents.message.text;
+    if (contents.message.voice) {
+      var fileId = contents.message.voice.file_id;
+      processVoiceMessage(fileId, chatId);
+      return;
+    }
+
+    
+    if (isValidEmail(text)) {
+      var userId = chatId;
+      saveEmailToSheet(userId, text);
+      sendBankOptions(chatId); 
+      return;
+    }
+  }
+
+  // (Allocations và functions đã di chuyển thành global)
+
+  // (Cache functions moved to global scope for reusability)
+
+    // (updateTransactionInSheet function moved to global scope)
+
+  if (contents.callback_query) {
+    var id_callback = chatId;
+    var data = contents.callback_query.data;
+    var messageId = contents.callback_query.message.message_id;
+    
+    Logger.log("SECOND CALLBACK BLOCK:");
+    Logger.log("Chat ID: " + id_callback);
+    Logger.log("Message ID: " + messageId);
+    Logger.log("Callback data: " + data);
+
+    if (data === 'totalchi') {
+      var userId = chatId;
+      var totalExpenses = getTotalAmountByType(userId, "ChiTieu");
+      sendText(id_callback, "Tổng chi tiêu của bạn là: " + totalExpenses.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), menuchi);
+    } else if (data === 'totalthunhap') {
+      var userId = chatId;
+      sendTotalIncomeSummary(id_callback, userId);
+    } else if (data === 'currentbalance') {
+      var userId = chatId;
+      var currentBalance = getCurrentBalance(userId);
+      var balanceMessage = "💰 <b>Tổng quan tài chính:</b>\n\n" +
+        "💹 Số tiền hiện tại của bạn là: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      
+      var overviewKeyboard = {
+        "inline_keyboard": [
+          [
+            {
+              text: "🏺 Xem theo hũ",
+              callback_data: "getTotalAllocationBalances"
+            },
+            {
+              text: "🏷️ Xem theo nhãn",
+              callback_data: "view_subcategory_summary"
+            }
+          ],
+          [
+            {
+              text: "📋 Lịch sử giao dịch",
+              callback_data: "history"
+            }
+          ]
+        ]
+      };
+      
+      editText(id_callback, messageId, balanceMessage, overviewKeyboard);
+    } else if (data === 'getTotalAllocationBalances') {
+      var userId = chatId;
+      sendTotalPhanboSummary(id_callback, userId, messageId);
+    } else if (data === 'show_percentage_menu') {
+      var userId = chatId;
+      sendPercentageSelectionMenu(id_callback, userId, messageId);
+    } else if (data === 'show_chart_menu') {
+      var userId = chatId;
+      sendChartSelectionMenu(id_callback, userId, messageId);
+    } else if (data === 'percentage_allocation_expense') {
+      var userId = chatId;
+      sendAllocationPercentages(id_callback, userId, messageId);
+    } else if (data === 'percentage_allocation_income') {
+      var userId = chatId;
+      sendIncomePercentages(id_callback, userId, messageId);
+    } else if (data === 'percentage_subcategory') {
+      var userId = chatId;
+      sendSubCategoryPercentages(id_callback, userId, messageId);
+    } else if (data === 'chart_allocation_expense') {
+      var userId = chatId;
+      sendAllocationChart(id_callback, userId, messageId);
+    } else if (data === 'chart_allocation_income') {
+      var userId = chatId;
+      sendIncomeChart(id_callback, userId, messageId);
+    } else if (data === 'chart_subcategory') {
+      var userId = chatId;
+      sendSubCategoryChart(id_callback, userId, messageId);
+    } else if (data === 'history') {
+      var userId = chatId;
+      sendTransactionHistory(id_callback, userId);
+    } else if (data === 'view_subcategory_summary') {
+      var userId = chatId;
+      sendTotalSubCategorySummary(id_callback, userId, messageId);
+    } else if (data === 'view_by_subcategory') {
+      var subCategoryKeyboard = createSubCategoryViewKeyboard();
+      editText(id_callback, messageId, "🏷️ <b>Chọn nhãn để xem lịch sử:</b>", subCategoryKeyboard);
+    } else if (data === 'view_by_allocation') {
+      var allocationKeyboard = createAllocationViewKeyboard();
+      editText(id_callback, messageId, "🏺 <b>Chọn hũ để xem chi tiết:</b>", allocationKeyboard);
+    } else if (data.startsWith('view_allocation_detail_')) {
+      var allocation = data.replace('view_allocation_detail_', '');
+      var userId = chatId;
+      sendTransactionHistoryByAllocation(id_callback, messageId, userId, allocation);
+    } else if (data.startsWith('view_allocation_transactions_')) {
+      var allocation = data.replace('view_allocation_transactions_', '');
+      var userId = chatId;
+      sendAllocationTransactionDetails(id_callback, messageId, userId, allocation);
+    } else if (data.startsWith('view_subcategory_')) {
+      var subCategory = data.replace('view_subcategory_', '');
+      var userId = chatId;
+      sendTransactionHistoryBySubCategory(id_callback, messageId, userId, subCategory);
+    } else if (data.startsWith('view_allocation_subs_')) {
+      var allocation = data.replace('view_allocation_subs_', '');
+      var userId = chatId;
+      var subCategoryBalances = getTotalSubCategoryBalancesByAllocation(userId, allocation);
+      
+      var message = "📁 <b>" + allocation + " - Chi tiêu theo nhãn:</b>\n\n";
+      var totalAllocation = 0;
+      var hasData = false;
+      
+      for (var subCategory in subCategoryBalances) {
+        if (subCategoryBalances[subCategory] > 0) {
+          hasData = true;
+          totalAllocation += subCategoryBalances[subCategory];
+          message += "• " + subCategory + ": " + 
+            subCategoryBalances[subCategory].toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "\n";
+        }
+      }
+      
+      if (hasData) {
+        message += "\n<b>💸 Tổng " + allocation + ": " + 
+          totalAllocation.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "</b>";
+      } else {
+        message = "Chưa có chi tiêu nào trong hũ '" + allocation + "'.";
+      }
+      
+      var backKeyboard = {
+        "inline_keyboard": [
+          [
+            {
+              text: "⬅️ Chọn nhãn khác",
+              callback_data: "view_by_subcategory"
+            },
+            {
+              text: "🏷️ Tổng tất cả nhãn",
+              callback_data: "view_subcategory_summary"
+            }
+          ]
+        ]
+      };
+      
+      editText(id_callback, messageId, message, backKeyboard);
+    } else if (data === 'back_to_main_view') {
+      // Quay lại menu chính
+      editText(id_callback, messageId, 'Xin chào ' + (contents.callback_query.from.first_name || 'bạn') + '! Menu Thư ký Capybara tại đây.', keyBoard);
+    } else {
+      Logger.log("DEBUG: Unhandled callback in second block: " + data);
+    }
+  } else if (contents.message) {
+    var id_message = chatId;
+    var text = contents.message.text;
+    if (text === '/xoathunhap') {
+      var userId = chatId;
+      var sheet = getSheet(userId);
+      var data = sheet
+        .getDataRange()
+        .getValues();
+      var newData = [];
+
+      for (var i = 0; i < data.length; i++) {
+        if (data[i][5] !== "ThuNhap") { // Type giờ ở cột F (index 5)
+          newData.push(data[i]);
+        }
+      }
+      
+      sheet
+        .getDataRange()
+        .clearContent();
+
+      
+      if (newData.length > 0) {
+        sheet
+          .getRange(1, 1, newData.length, newData[0].length)
+          .setValues(newData);
+      }
+      sendText(chatId, "Đã xoá các thu nhập.");
+      return;
+    } else if (text === '/xoachitieu') {
+      var userId = chatId;
+      var sheet = getSheet(userId);
+      var data = sheet
+        .getDataRange()
+        .getValues();
+      var newData = [];
+
+      for (var i = 0; i < data.length; i++) {
+        if (data[i][5] !== "ChiTieu") { // Type giờ ở cột F (index 5)
+          newData.push(data[i]);
+        }
+      }
+      
+      sheet
+        .getDataRange()
+        .clearContent();
+
+      
+      if (newData.length > 0) {
+        sheet
+          .getRange(1, 1, newData.length, newData[0].length)
+          .setValues(newData);
+      }
+      sendText(chatId, "Đã xoá các giao dịch chi tiêu.");
+      return;
+    } else if (text === '/xoatatca') {
+      var userId = chatId;
+      var sheet = getSheet(userId);
+      var data = sheet
+        .getDataRange()
+        .getValues();
+      var newData = [];
+
+      for (var i = 0; i < data.length; i++) {
+        if (data[i][5] !== "ChiTieu" && data[i][5] !== "ThuNhap") { // Type giờ ở cột F (index 5)
+          newData.push(data[i]);
+        }
+      }
+      
+      sheet
+        .getDataRange()
+        .clearContent();
+
+      
+      if (newData.length > 0) {
+        sheet
+          .getRange(1, 1, newData.length, newData[0].length)
+          .setValues(newData);
+      }
+      sendText(chatId, "Đã xoá các giao dịch chi tiêu và thu nhập.");
+      
+      return;
+    } else if (text.includes("+")) {
+      var parts = text.split(" + ");
+      if (parts.length >= 2) {
+        var itemWithAllocation = parts[0].trim();
+        var amountWithDate = parts[1].trim();
+        var allocationAndDate = parts
+          .slice(2)
+          .join(" ")
+          .trim() || "Chi tiêu thiết yếu";
+        var allocationParts = itemWithAllocation.split("+");
+        var currentDate = new Date(year, month, day);
+        var date;
+
+        if (allocationParts.length >= 2) {
+          item = allocationParts[0].trim();
+          allocationAndDate = allocationParts[1].trim();
+        } else {
+          item = itemWithAllocation;
+        }
+        
+        var dateRegex = /(\d{1,2}[/-]\d{1,2}[/-]\d{4})/;
+        var dateMatch = allocationAndDate.match(dateRegex);
+
+        if (dateMatch) {
+          
+          var dateParts = dateMatch[0].split(/[/-]/);
+          var day = parseInt(dateParts[0]);
+          var month = parseInt(dateParts[1]) - 1;
+          var year = parseInt(dateParts[2]);
+          date = new Date(year, month, day);
+          allocationAndDate = allocationAndDate
+            .replace(dateRegex, "")
+            .trim();
+        } else {
+          
+          var currentDate = new Date();
+          var day = currentDate.getDate();
+          var month = currentDate.getMonth();
+          var year = currentDate.getFullYear();
+          date = new Date(year, month, day);
+        }
+        var amount = parseFloat(amountWithDate);
+        var allocation = allocationAndDate || "Chi tiêu thiết yếu";
+        var type = "ThuNhap"; 
+        if (!isNaN(amount) && allocations.includes(allocation)) {
+          // Lưu thông tin giao dịch tạm
+          saveTempTransaction(chatId, {
+            date: date,
+            description: item,
+            amount: amount,
+            allocation: allocation,
+            type: type
+          });
+          
+          // Hiển thị keyboard chọn nhãn con với allocationIndex
+          var allocationIndex = allocations.indexOf(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
+          sendText(
+            id_message,
+            "Thu nhập: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+            " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+            keyboard
+          );
+          return;
+        } else {
+          sendText(
+            id_message,
+            "Vui lòng cung cấp thông tin thu nhập và số tiền theo cú pháp lệnh sau:\n<b>1. Thêm thông tin Thu nhập:</b>\n   - <code>nội dung + số tiền</code>\n\n<b>2. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể:</b>\n   - <code>nội dung + số tiền + ngày/tháng/năm</code>\n\n<b>3. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể và Hũ cụ thể:</b>\n   - <code>nội dung + số tiền + ngày/tháng/năm + hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)</code>"
+          ); return;
+        }
+      } else {
+        sendText(
+          id_message,
+          "Vui lòng cung cấp thông tin thu nhập và số tiền theo cú pháp lệnh sau:\n<b>1. Thêm thông tin Thu nhập:</b>\n   - <code>nội dung + số tiền</code>\n\n<b>2. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể:</b>\n   - <code>nội dung + số tiền + ngày/tháng/năm</code>\n\n<b>3. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể và Hũ cụ thể:</b>\n   - <code>nội dung + số tiền + ngày/tháng/năm + hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)</code>"
+        ); return;
+        
+      }
+    } else if (text.includes("-")) {
+      var parts = text.split(" - ");
+      if (parts.length >= 2) {
+        var itemWithAllocation = parts[0].trim();
+        var amountWithDate = parts[1].trim();
+        var allocationAndDate = parts
+          .slice(2)
+          .join(" ")
+          .trim() || "Chi tiêu thiết yếu";
+        var allocationParts = itemWithAllocation.split("-");
+        var currentDate = new Date(year, month, day);
+        var date;
+
+        if (allocationParts.length >= 2) {
+          item = allocationParts[0].trim();
+          allocationAndDate = allocationParts[1].trim();
+        } else {
+          item = itemWithAllocation;
+        }
+        
+        var dateRegex = /(\d{1,2}[/-]\d{1,2}[/-]\d{4})/;
+        var dateMatch = allocationAndDate.match(dateRegex);
+        if (dateMatch) {
+          
+          var dateParts = dateMatch[0].split(/[/-]/);
+          var day = parseInt(dateParts[0]);
+          var month = parseInt(dateParts[1]) - 1;
+          var year = parseInt(dateParts[2]);
+          date = new Date(year, month, day);
+          allocationAndDate = allocationAndDate
+            .replace(dateRegex, "")
+            .trim();
+        } else {
+          
+          var currentDate = new Date();
+          var day = currentDate.getDate();
+          var month = currentDate.getMonth();
+          var year = currentDate.getFullYear();
+          date = new Date(year, month, day);
+        }
+        var amount = parseFloat(amountWithDate) 
+        var allocation = allocationAndDate || "Chi tiêu thiết yếu";
+        var type = "ChiTieu"; 
+        if (!isNaN(amount) && allocations.includes(allocation)) {
+          // Lưu thông tin giao dịch tạm
+          saveTempTransaction(chatId, {
+            date: date,
+            description: item,
+            amount: amount,
+            allocation: allocation,
+            type: type
+          });
+          
+          // Hiển thị keyboard chọn nhãn con với allocationIndex
+          var allocationIndex = allocations.indexOf(allocation);
+          var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
+          sendText(
+            id_message,
+            "Chi tiêu: " + item + " " + amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+            " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
+            keyboard
+          );
+          return;
+        } else {
+          sendText(
+            id_message,
+            "Vui lòng cung cấp thông tin Chi tiêu và số tiền theo cú pháp lệnh sau:\n<b>1. Thêm thông tin Chi tiêu:</b>\n   - <code>nội dung - số tiền</code>\n\n<b>2. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể:</b>\n   - <code>nội dung - số tiền - ngày/tháng/năm</code>\n\n<b>3. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể và Hũ cụ thể:</b>\n   - <code>nội dung - số tiền - ngày/tháng/năm - hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)</code>"
+          ); return;
+
+        }
+      } else {
+        sendText(
+          id_message,
+          "Vui lòng cung cấp thông tin Chi tiêu và số tiền theo cú pháp lệnh sau:\n<b>1. Thêm thông tin Chi tiêu:</b>\n   - <code>nội dung - số tiền</code>\n\n<b>2. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể:</b>\n   - <code>nội dung - số tiền - ngày/tháng/năm</code>\n\n<b>3. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể và Hũ cụ thể:</b>\n   - <code>nội dung - số tiền - ngày/tháng/năm - hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)</code>"
+        ); return;
+
+      }
+    }
+    
+    if (text.startsWith("/history")) {
+      var parts = text.split(" ");
+      if (parts.length >= 2) {
+        var historyType = parts[1].toLowerCase();
+        var userId = chatId;
+        var startDate;
+        var endDate;
+
+        if (historyType === "today") {
+          
+          var today = new Date();
+          startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+        } else if (historyType === "week") {
+          
+          var today = new Date();
+          var startOfWeek = today.getDate() - today.getDay();
+          startDate = new Date(today.getFullYear(), today.getMonth(), startOfWeek);
+          endDate = new Date(today.getFullYear(), today.getMonth(), startOfWeek + 7);
+        } else if (text.startsWith("/history w")) {
+          var parts = text.split(" ");
+          if (parts.length === 3 && parts[1] === "w") {
+            var weekNumber = parseInt(parts[2]);
+            if (!isNaN(weekNumber) && weekNumber >= 1 && weekNumber <= 4) {
+              
+              var currentDate = new Date();
+              var startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), (weekNumber - 1) * 7 + 1);
+              var endDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), weekNumber * 7 + 1);
+
+              
+              sendTransactionHistoryByDateRange(chatId, userId, startDate, endDate);
+              return;
+            }
+          }
+          sendText(id_message, "Vui lòng cung cấp tuần hợp lệ, bạn có thể thử /history w 1, /history w 2, /history w 3, /history w 4.");
+        } else if (text.startsWith("/history month")) {
+          var parts = text.split(" ");
+          if (parts.length === 3 && parts[1] === "month") {
+            var monthYearStr = parts[2];
+            var [month, year] = monthYearStr.split("/");
+            if (month && year) {
+              month = parseInt(month);
+              year = parseInt(year);
+              if (!isNaN(month) && !isNaN(year)) {
+                
+                var startDate = new Date(year, month - 1, 1);
+                var endDate = new Date(year, month, 0);
+              }
+            } else {
+              sendText(
+                id_message,
+                "Vui lòng cung cấp tháng hợp lệ, ví dụ: /history month MM/YYYY"
+              );
+              return;
+            }
+          }
+        } else if (text.startsWith("/history year")) {
+          var parts = text.split(" ");
+          if (parts.length === 3 && parts[1] === "year") {
+            var year = parseInt(parts[2]);
+            if (!isNaN(year)) {
+              var startDate = new Date(year, 0, 1);
+              var endDate = new Date(year + 1, 0, 1);
+            }
+          } else {
+            sendText(
+              id_message,
+              "Vui lòng cung cấp năm hợp lệ, ví dụ: /history year YYYY"
+            );
+            return;
+          }
+        } else if (parts.length >= 3 && parts[1] === 'd') {
+          
+          var dateParts = parts
+            .slice(2)
+            .join(" ")
+            .split("/");
+          if (dateParts.length === 3) {
+            var year = parseInt(dateParts[2]);
+            var month = parseInt(dateParts[1]) - 1; 
+            var day = parseInt(dateParts[0]);
+            startDate = new Date(year, month, day);
+            endDate = new Date(year, month, day + 1); 
+          } else {
+            sendText(
+              id_message,
+              "Vui lòng cung cấp ngày/tháng/năm hợp lệ, ví dụ: /history d DD/MM/YYYY"
+            );
+            return;
+          }
+        } else {
+          sendText(
+            id_message,
+            'Lệnh không hợp lệ. Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
+          ); return;
+
+
+        }
+
+        sendTransactionHistoryByDateRange(id_message, userId, startDate, endDate);
+      } else {
+        sendText(
+          id_message,
+          'Hãy sử dụng các lệnh sau:\n <b>1. Lịch sử Thu/Chi hôm nay:</b>\n   - <code>/history today</code>\n\n<b>2. Lịch sử Thu/Chi ngày cụ thể:</b>\n   - <code>/history d ngày/tháng/năm</code>\n\n<b>3. Lịch sử Thu/Chi trong tuần:</b>\n   - <code>/history week</code>\n\n<b>4. Lịch sử Thu/Chi trong tuần cụ thể:</b>\n   - <code>/history w 1 (2, 3, 4)</code>\n\n<b>5. Lịch sử Thu/Chi tháng:</b>\n   - <code>/history month tháng/năm</code>\n\n<b>6. Lịch sử Thu/Chi năm:</b>\n   - <code>/history year năm</code>\n'
+        ); return;
+      }
+    } else if (text === '/start') {
+      
+      sendText(id_message, 
+        '🐹 Xin chào ' + userName + '!\n\n' +
+        '🐹 <b>Thư ký Capybara</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
+        '• 📊 Theo dõi thu chi một cách chi tiết\n' +
+        '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
+        '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
+        '• 📈 Xem báo cáo và lịch sử giao dịch\n\n' +
+        '⚡ <b>Bắt đầu nhanh:</b>\n' +
+        '• Gõ <code>/chi ăn sáng 25000</code> để nhập chi tiêu\n' +
+        '• Gõ <code>/thu lương 10000000</code> để nhập thu nhập\n' +
+        '• Gõ <code>/help</code> để xem tất cả lệnh\n' +
+        '• Gõ <code>/menu</code> để xem menu tương tác\n\n' +
+        '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Thư ký Capybara!'
+      );
+    }
+    else if (text === '/menu') {
+      
+      sendText(id_message, 'Xin chào ' + userName + '! Menu Thư ký Capybara tại đây.',
+        keyBoard
+      );
+      
+    // === QUICK ACCESS COMMANDS ===
+    } else if (text === '/tongtien') {
+      var userId = chatId;
+      var currentBalance = getCurrentBalance(userId);
+      sendText(id_message, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
+      
+    } else if (text === '/tongchi') {
+      var userId = chatId;
+      var totalExpenses = getTotalAmountByType(userId, "ChiTieu");
+      sendText(id_message, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
+      
+    } else if (text === '/tongthunhap') {
+      var userId = chatId;
+      sendTotalIncomeSummary(id_message, userId);
+      
+    } else if (text === '/xemhu') {
+      var userId = chatId;
+      sendTotalPhanboSummary(id_message, userId);
+      
+    } else if (text === '/xemnhan') {
+      var userId = chatId;
+      sendTotalSubCategorySummary(id_message, userId);
+      
+    } else if (text === '/tile' || text === '/tylе') {
+      var userId = chatId;
+      sendPercentageSelectionMenu(id_message, userId);
+      
+    } else if (text === '/biеudo' || text === '/chart') {
+      var userId = chatId;
+      sendChartSelectionMenu(id_message, userId);
+      
+    } else if (text === '/lichsu') {
+      var userId = chatId;
+      sendTransactionHistory(id_message, userId);
+      
+    // === QUICK INPUT COMMANDS ===
+    } else if (text.startsWith('/chi ')) {
+      // /chi description amount - Nhanh chóng nhập chi tiêu
+      var input = text.substring(5); // Bỏ "/chi "
+      handleQuickExpense(id_message, chatId, input, userName);
+      
+    } else if (text.startsWith('/thu ')) {
+      // /thu description amount - Nhanh chóng nhập thu nhập
+      var input = text.substring(5); // Bỏ "/thu "
+      handleQuickIncome(id_message, chatId, input, userName);
+      
+    } else if (text === '/commands' || text === '/help') {
+      sendCommandsList(id_message);
+    } else if (text.startsWith('/del')) {
+      var userId = chatId;
+      var transactionId;
+      var menuthuchi = {
+        "inline_keyboard": [
+          [
+            {
+              text: 'Xem số thứ tự Thu/Chi',
+              callback_data: 'history'
+            }
+          ]
+        ]
+      };
+      
+      var parts = text.split(' ');
+
+      
+      for (var i = 1; i < parts.length; i++) {
+        var part = parts[i];
+        if (!isNaN(parseInt(part))) {
+          
+          transactionId = parseInt(part);
+          break;
+        }
+      }
+
+      if (transactionId !== undefined) {
+        
+        var success = deleteTransactionByRow(userId, transactionId);
+
+        if (success) {
+          sendText(id_message, 'Đã xoá thành công Thu/Chi có số thứ tự: ' + transactionId);
+        } else {
+          sendText(id_message, 'Không tìm thấy thu/chi có số thứ tự ' + transactionId);
+        }
+      } else {
+        sendText(id_message, 'Vui lòng cung cấp số thứ tự của thu/chi cần xoá vào lệnh ví dụ bên dưới.\n Ví dụ: <code>/del số_thứ_tự</code>', menuthuchi);
+      }
+      return;
+    } else if (text === '/help') {
+      
+      sendText(id_message, `Xin chào ` + userName + `! Dưới đây là cách bạn có thể gửi thông tin về Chi tiêu và Thu nhập của bạn cũng như xem lịch sử chi tiêu:
+
+<b>💳 Chi tiêu:</b>
+1. Thêm thông tin Chi tiêu:
+  \<code>nội dung - số tiền\</code>
+
+2. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể:
+  \<code>nội dung - số tiền - ngày/tháng/năm\</code>
+
+3. Thêm thông tin Chi tiêu vào ngày/tháng/năm cụ thể và Hũ cụ thể:
+  \<code>nội dung - số tiền - ngày/tháng/năm - hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)\</code>
+
+<b>💰 Thu nhập:</b>
+1. Thêm thông tin Thu nhập:
+  \<code>nội dung + số tiền\</code>
+
+2. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể:
+  \<code>nội dung + số tiền + ngày/tháng/năm\</code>
+
+3. Thêm thông tin Thu nhập vào ngày/tháng/năm cụ thể và Hũ cụ thể:
+  \<code>nội dung + số tiền + ngày/tháng/năm + hũ (Chi tiêu thiết yếu, Hưởng thụ, Tiết kiệm dài hạn, Giáo dục, Tự do tài chính, Cho đi)\</code>
+
+<b>📅 Lịch sử Thu/Chi:</b>
+1. Lịch sử Thu/Chi hôm nay:
+  \<code>/history today\</code>
+
+2. Lịch sử Thu/Chi ngày cụ thể:
+  \<code>/history d ngày/tháng/năm\</code>
+
+3. Lịch sử Thu/Chi trong tuần:
+  \<code>/history week\</code>
+
+4. Lịch sử Thu/Chi trong tuần cụ thể:
+  \<code>/history w 1 (2, 3, 4)\</code>
+
+5. Lịch sử Thu/Chi tháng:
+  \<code>/history month tháng/năm\</code>
+
+6. Lịch sử Thu/Chi năm:
+  \<code>/history year năm\</code>
+
+<b>🗑️ Clear:</b>
+1. Xoá Thu/Chi:
+  \<code>/del\</code>
+2. Xoá tất cả chi tiêu:
+  \<code>/clearchitieu\</code>
+3. Xoá tất cả thu nhập:
+  \<code>/clearthunhap\</code>
+
+<b>📊 Phân tích & Biểu đồ:</b>
+1. Menu xem tỉ lệ % (hũ & nhãn):
+  \<code>/tile\</code>
+2. Menu xem biểu đồ (hũ & nhãn):
+  \<code>/bieudo\</code>
+`);
+    } else {
+      
+      sendText(
+        id_message,
+        "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây."
+      );
+    }
+  }
+}
+
+
 
 function addIncomeData(userId, date, content, amount, allocation, subCategory) {
   var sheet = getSheet(userId);
