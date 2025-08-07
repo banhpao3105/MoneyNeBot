@@ -9,21 +9,32 @@ function getApiKeys() {
 }
 
 
-var telegramUrl = "https://api.telegram.org/bot" + token;
-var webAppUrl = "CHANGE_YOU_URL_APPSCRIP";
+const telegramUrl = "https://api.telegram.org/bot" + token;
+
+// =================== AUTO WEB APP URL ===================
+function getWebAppUrl() {
+  try {
+    return ScriptApp.getService().getUrl();
+  } catch (error) {
+    Logger.log("Error getting auto Web App URL: " + error.toString());
+    return "CHANGE_YOU_URL_APPSCRIP"; // Fallback
+  }
+}
+
+const webAppUrl = getWebAppUrl();
 
 
 function setWebhook() {
-  var url = telegramUrl + "/setWebhook?url=" + webAppUrl;
-  var response = UrlFetchApp.fetch(url);
+  const url = telegramUrl + "/setWebhook?url=" + webAppUrl;
+  const response = UrlFetchApp.fetch(url);
   Logger.log("Webhook response: " + response.getContentText());
   return response.getContentText();
 }
 
 // Function để set webhook với URL cụ thể
 function setWebhookWithURL(newWebAppUrl) {
-  var url = telegramUrl + "/setWebhook?url=" + newWebAppUrl;
-  var response = UrlFetchApp.fetch(url);
+  const url = telegramUrl + "/setWebhook?url=" + newWebAppUrl;
+  const response = UrlFetchApp.fetch(url);
   Logger.log("Webhook set to: " + newWebAppUrl);
   Logger.log("Response: " + response.getContentText());
   return response.getContentText();
@@ -34,8 +45,31 @@ function formatNumberWithSeparator(number) {
     .toString()
 }
 
+// =================== CONSTANTS ===================
+const TRANSACTION_TYPE = {
+  EXPENSE: 'ChiTieu',
+  INCOME: 'ThuNhap'
+};
+
+const CALLBACK_PREFIX = {
+  EDIT_TRANSACTION: 'edit_transaction_',
+  EDIT_ALLOCATION: 'edit_allocation_',
+  EDIT_ALLOC: 'edit_alloc_',
+  EDIT_SUBCATEGORY: 'edit_subcategory_',
+  EDIT_SUB: 'edit_sub_',
+  CANCEL_EDIT: 'cancel_edit_',
+  SUBCATEGORY: 'subcategory_',
+  SUB: 'sub_',
+  ALLOCATION: 'allocation_',
+  BANK: 'bank_',
+  VIEW_ALLOCATION_DETAIL: 'view_allocation_detail_',
+  VIEW_ALLOCATION_TRANSACTIONS: 'view_allocation_transactions_',
+  VIEW_SUBCATEGORY: 'view_subcategory_',
+  VIEW_ALLOCATION_SUBS: 'view_allocation_subs_'
+};
+
 // Global allocations array (sử dụng cho toàn bộ ứng dụng)
-var allocations = [
+const allocations = [
   'Chi tiêu thiết yếu',
   'Hưởng thụ',
   'Tiết kiệm dài hạn',
@@ -45,7 +79,7 @@ var allocations = [
 ];
 
 // Global subcategories object
-var subCategories = {
+const subCategories = {
   'Chi tiêu thiết yếu': ['Nhà ở', 'Ăn ngoài', 'Hóa đơn', 'Đi chợ siêu thị', 'Di chuyển', 'Sức khỏe'],
   'Hưởng thụ': ['Giải trí', 'Thức uống', 'Nhà hàng', 'Mua sắm', 'Chăm sóc bản thân', 'Du lịch', 'Thể thao'],
   'Tiết kiệm dài hạn': ['Mua sắm những món đồ giá trị', 'Những kỳ nghỉ lớn', 'Các mục tiêu cá nhân khác', 'Quỹ dự phòng khẩn cấp'],
@@ -224,21 +258,28 @@ function createSubCategoryKeyboard(allocation, isEdit, transactionId, allocation
   };
 }
 
-// Tính số thứ tự giao dịch trong ngày
+/**
+ * OPTIMIZED: Only read Date column (B) instead of entire sheet
+ */
 function getNextSequenceNumber(userId, date) {
-  var sheet = getSheet(userId); 
-  var data = sheet.getDataRange().getValues();
+  const sheet = getSheet(userId);
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < 2) return 1; // No data rows, start with 1
   
   // Chuyển date thành chuỗi để so sánh (format: DD/MM/YYYY)
-  var targetDate = new Date(date);
-  var targetDateStr = formatDate(targetDate);
+  const targetDate = new Date(date);
+  const targetDateStr = formatDate(targetDate);
   
-  var count = 0;
+  // Only read Date column (B) from row 2 to last row
+  const dateData = sheet.getRange(2, 2, lastRow - 1, 1).getValues(); // Column B only
+  
+  let count = 0;
   // Bắt đầu từ dòng 2 (bỏ qua header)
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][1]) { // Kiểm tra cột Date (giờ là cột B - index 1)
-      var rowDate = new Date(data[i][1]);
-      var rowDateStr = formatDate(rowDate);
+  for (let i = 0; i < dateData.length; i++) {
+    if (dateData[i][0]) { // Kiểm tra cột Date
+      const rowDate = new Date(dateData[i][0]);
+      const rowDateStr = formatDate(rowDate);
       
       if (rowDateStr === targetDateStr) {
         count++;
@@ -311,7 +352,7 @@ function editText(chatId, messageId, text, keyBoard) {
   }
 }
 
-var keyBoard = {
+const keyBoard = {
   "inline_keyboard": [
     [
       {
@@ -369,7 +410,7 @@ var keyBoard = {
     ]
   ]
 };
-var menuchi = {
+const menuchi = {
   "inline_keyboard": [
     [
       {
@@ -384,7 +425,7 @@ var menuchi = {
   ]
 };
 
-function doPost(e) {
+function doPostOld(e) {
   var contents = JSON.parse(e.postData.contents);
   var chatId;
   var userName;
@@ -2666,28 +2707,36 @@ function createAllocationViewKeyboard() {
   };
 }
 
-// Tính tổng chi tiêu theo từng subcategory
+/**
+ * OPTIMIZED: Only read Amount, Type, and SubCategory columns instead of entire sheet
+ */
 function getTotalSubCategoryBalances(userId) {
-  var sheet = getSheet(userId);
-  var data = sheet.getDataRange().getValues();
-  var balances = {};
+  const sheet = getSheet(userId);
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < 2) return {}; // No data rows
+  
+  const balances = {};
   
   // Initialize balances cho tất cả subcategories
-  for (var allocation in subCategories) {
-    for (var i = 0; i < subCategories[allocation].length; i++) {
-      var subCategory = subCategories[allocation][i];
+  for (const allocation in subCategories) {
+    for (let i = 0; i < subCategories[allocation].length; i++) {
+      const subCategory = subCategories[allocation][i];
       balances[subCategory] = 0;
     }
   }
   
+  // Only read columns D, F, G (Amount, Type, SubCategory) from row 2 to last row
+  const data = sheet.getRange(2, 4, lastRow - 1, 4).getValues(); // D, E, F, G columns
+  
   // Đọc data từ sheet và tính tổng
-  for (var i = 1; i < data.length; i++) {
-    var amount = data[i][3];        // Amount ở cột D (index 3)
-    var type = data[i][5];          // Type ở cột F (index 5)
-    var subCategory = data[i][6];   // SubCategory ở cột G (index 6)
+  for (let i = 0; i < data.length; i++) {
+    const amount = data[i][0];        // Amount ở cột D (index 0 trong range)
+    const type = data[i][2];          // Type ở cột F (index 2 trong range)
+    const subCategory = data[i][3];   // SubCategory ở cột G (index 3 trong range)
     
     if (subCategory && balances.hasOwnProperty(subCategory)) {
-      if (type === "ChiTieu") {
+      if (type === TRANSACTION_TYPE.EXPENSE) {
         balances[subCategory] += amount;
       }
       // Chỉ tính chi tiêu, không tính thu nhập cho subcategories
@@ -2697,29 +2746,37 @@ function getTotalSubCategoryBalances(userId) {
   return balances;
 }
 
-// Tính tổng subcategories trong một allocation cụ thể
+/**
+ * OPTIMIZED: Only read needed columns for specific allocation
+ */
 function getTotalSubCategoryBalancesByAllocation(userId, allocation) {
-  var sheet = getSheet(userId);
-  var data = sheet.getDataRange().getValues();
-  var balances = {};
+  const sheet = getSheet(userId);
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < 2) return {}; // No data rows
+  
+  const balances = {};
   
   // Initialize balances cho subcategories của allocation này
   if (subCategories[allocation]) {
-    for (var i = 0; i < subCategories[allocation].length; i++) {
-      var subCategory = subCategories[allocation][i];
+    for (let i = 0; i < subCategories[allocation].length; i++) {
+      const subCategory = subCategories[allocation][i];
       balances[subCategory] = 0;
     }
   }
   
-  // Đọc data và tình tổng cho allocation cụ thể
-  for (var i = 1; i < data.length; i++) {
-    var amount = data[i][3];           // Amount
-    var itemAllocation = data[i][4];   // Allocation  
-    var type = data[i][5];             // Type
-    var subCategory = data[i][6];      // SubCategory
+  // Only read columns D, E, F, G (Amount, Allocation, Type, SubCategory) from row 2 to last row
+  const data = sheet.getRange(2, 4, lastRow - 1, 4).getValues(); // D, E, F, G columns
+  
+  // Đọc data và tính tổng cho allocation cụ thể
+  for (let i = 0; i < data.length; i++) {
+    const amount = data[i][0];           // Amount ở cột D (index 0 trong range)
+    const itemAllocation = data[i][1];   // Allocation ở cột E (index 1 trong range)
+    const type = data[i][2];             // Type ở cột F (index 2 trong range)
+    const subCategory = data[i][3];      // SubCategory ở cột G (index 3 trong range)
     
     if (itemAllocation === allocation && subCategory && balances.hasOwnProperty(subCategory)) {
-      if (type === "ChiTieu") {
+      if (type === TRANSACTION_TYPE.EXPENSE) {
         balances[subCategory] += amount;
       }
     }
@@ -3427,15 +3484,23 @@ function sendTotalIncomeSummary(chatId, userId) {
   sendText(chatId, message, menuchithu);
 }
 
+/**
+ * OPTIMIZED: Only read Amount (D) and Type (F) columns instead of entire sheet
+ */
 function getTotalAmountByType(userId, type) {
-  var sheet = getSheet(userId);
-  var data = sheet
-    .getDataRange()
-    .getValues();
-  var total = 0;
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][5] === type) { // Type giờ ở index 5
-      total += data[i][3];     // Amount giờ ở index 3
+  const sheet = getSheet(userId);
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < 2) return 0; // No data rows
+  
+  // Only read columns D and F (Amount and Type) from row 2 to last row
+  const data = sheet.getRange(2, 4, lastRow - 1, 1).getValues(); // Amount column (D)
+  const typeData = sheet.getRange(2, 6, lastRow - 1, 1).getValues(); // Type column (F)
+  
+  let total = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (typeData[i][0] === type) {
+      total += data[i][0];
     }
   }
   return total;
@@ -3992,6 +4057,441 @@ const bankDomains = {
   "VPBank": ["vpbankonline@vpb.com.vn", "customercare@care.vpb.com.vn"],
   "ACB": "mailalert@acb.com.vn"
 };
+
+// =================== NEW REFACTORED HANDLER FUNCTIONS ===================
+
+/**
+ * Main entry point - Router pattern (NEW VERSION)
+ */
+function doPost(e) {
+  try {
+    const contents = JSON.parse(e.postData.contents);
+    Logger.log("=== DOPOST DEBUG ===");
+    Logger.log("Request contents: " + JSON.stringify(contents));
+
+    if (contents.callback_query) {
+      handleCallbackQuery(contents.callback_query);
+    } else if (contents.message) {
+      handleMessage(contents.message);
+    }
+  } catch (err) {
+    Logger.log("Error in doPost: " + err.toString());
+  }
+}
+
+/**
+ * Handle all callback queries from inline keyboards
+ */
+function handleCallbackQuery(callbackQuery) {
+  const chatId = callbackQuery.from.id;
+  const userName = callbackQuery.from.first_name;
+  const data = callbackQuery.data;
+  const messageId = callbackQuery.message.message_id;
+  
+  Logger.log("CALLBACK QUERY: " + data + " from user " + chatId);
+
+  // Route to specific handlers based on callback data
+  if (data === 'connect_email') {
+    processConnectEmail(chatId);
+  } else if (data.startsWith(CALLBACK_PREFIX.BANK)) {
+    processBankSelection(chatId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.SUBCATEGORY) || data.startsWith(CALLBACK_PREFIX.SUB)) {
+    processSubcategorySelection(chatId, messageId, data);
+  } else if (data === 'edit_transaction' || data.startsWith(CALLBACK_PREFIX.EDIT_TRANSACTION)) {
+    processEditTransaction(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.EDIT_ALLOCATION) || data.startsWith(CALLBACK_PREFIX.EDIT_ALLOC)) {
+    processEditAllocation(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.EDIT_SUBCATEGORY) || data.startsWith(CALLBACK_PREFIX.EDIT_SUB)) {
+    processEditSubcategory(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.ALLOCATION)) {
+    processAllocationSelection(chatId, messageId, data);
+  } else if (data === 'back_to_allocation') {
+    processBackToAllocation(chatId, messageId);
+  } else if (data === 'cancel_new') {
+    processCancelNew(chatId, messageId);
+  } else if (data.startsWith(CALLBACK_PREFIX.CANCEL_EDIT)) {
+    processCancelEdit(chatId, messageId, data);
+  } else if (data === 'totalchi') {
+    processShowTotalExpenses(chatId);
+  } else if (data === 'totalthunhap') {
+    processShowTotalIncome(chatId);
+  } else if (data === 'currentbalance') {
+    processShowCurrentBalance(chatId, messageId);
+  } else if (data === 'getTotalAllocationBalances') {
+    processShowAllocationBalances(chatId, messageId);
+  } else if (data === 'show_percentage_menu') {
+    sendPercentageSelectionMenu(chatId, null, messageId);
+  } else if (data === 'show_chart_menu') {
+    sendChartSelectionMenu(chatId, null, messageId);
+  } else if (data === 'percentage_allocation_expense') {
+    sendAllocationPercentages(chatId, null, messageId);
+  } else if (data === 'percentage_allocation_income') {
+    sendIncomePercentages(chatId, null, messageId);
+  } else if (data === 'percentage_subcategory') {
+    sendSubCategoryPercentages(chatId, null, messageId);
+  } else if (data === 'chart_allocation_expense') {
+    sendAllocationChart(chatId, null, messageId);
+  } else if (data === 'chart_allocation_income') {
+    sendIncomeChart(chatId, null, messageId);
+  } else if (data === 'chart_subcategory') {
+    sendSubCategoryChart(chatId, null, messageId);
+  } else if (data === 'history') {
+    sendTransactionHistory(chatId, null);
+  } else if (data === 'view_subcategory_summary') {
+    sendTotalSubCategorySummary(chatId, null, messageId);
+  } else if (data === 'view_by_subcategory') {
+    processViewBySubcategory(chatId, messageId);
+  } else if (data === 'view_by_allocation') {
+    processViewByAllocation(chatId, messageId);
+  } else if (data.startsWith(CALLBACK_PREFIX.VIEW_ALLOCATION_DETAIL)) {
+    processViewAllocationDetail(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.VIEW_ALLOCATION_TRANSACTIONS)) {
+    processViewAllocationTransactions(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.VIEW_SUBCATEGORY)) {
+    processViewSubcategory(chatId, messageId, data);
+  } else if (data.startsWith(CALLBACK_PREFIX.VIEW_ALLOCATION_SUBS)) {
+    processViewAllocationSubs(chatId, messageId, data);
+  } else if (data === 'back_to_main_view') {
+    processBackToMainView(chatId, messageId, userName);
+  } else {
+    Logger.log("Unhandled callback: " + data);
+  }
+}
+
+/**
+ * Handle all text messages and commands
+ */
+function handleMessage(message) {
+  const chatId = message.chat.id;
+  const userName = message.from.first_name;
+  const text = message.text;
+
+  // Handle voice messages with loading indicator
+  if (message.voice) {
+    sendLoadingMessage(chatId, "xử lý tin nhắn voice");
+    processVoiceMessage(message.voice.file_id, chatId);
+    return;
+  }
+
+  // Handle email validation
+  if (isValidEmail(text)) {
+    saveEmailToSheet(chatId, text);
+    sendBankOptions(chatId);
+    return;
+  }
+
+  // Route commands and text
+  if (text === '/start') {
+    processStartCommand(chatId, userName);
+  } else if (text === '/menu') {
+    processMenuCommand(chatId, userName);
+  } else if (text === '/help' || text === '/commands') {
+    sendCommandsList(chatId);
+  } else if (text === '/tongtien') {
+    processShowTotalMoney(chatId);
+  } else if (text === '/tongchi') {
+    processShowTotalExpenseCommand(chatId);
+  } else if (text === '/tongthunhap') {
+    sendTotalIncomeSummary(chatId, chatId);
+  } else if (text === '/xemhu') {
+    sendLoadingMessage(chatId, "tính toán số dư các hũ");
+    sendTotalPhanboSummary(chatId, chatId);
+  } else if (text === '/xemnhan') {
+    sendLoadingMessage(chatId, "tính toán chi tiêu theo nhãn");
+    sendTotalSubCategorySummary(chatId, chatId);
+  } else if (text === '/tile' || text === '/tylе') {
+    sendPercentageSelectionMenu(chatId, chatId);
+  } else if (text === '/biеudo' || text === '/chart') {
+    sendChartSelectionMenu(chatId, chatId);
+  } else if (text === '/lichsu') {
+    sendLoadingMessage(chatId, "tải lịch sử giao dịch");
+    sendTransactionHistory(chatId, chatId);
+  } else if (text.startsWith('/chi ')) {
+    handleQuickExpense(chatId, chatId, text.substring(5), userName);
+  } else if (text.startsWith('/thu ')) {
+    handleQuickIncome(chatId, chatId, text.substring(5), userName);
+  } else if (text.startsWith('/del')) {
+    processDeleteCommand(chatId, text);
+  } else if (text === '/xoathunhap') {
+    processDeleteIncome(chatId);
+  } else if (text === '/xoachitieu') {
+    processDeleteExpenses(chatId);
+  } else if (text === '/xoatatca') {
+    processDeleteAll(chatId);
+  } else if (text.startsWith("/history")) {
+    processHistoryCommand(chatId, text);
+  } else if (text.includes("+")) {
+    processIncomeTransaction(chatId, text);
+  } else if (text.includes("-")) {
+    processExpenseTransaction(chatId, text);
+  } else {
+    processDefaultMessage(chatId, userName);
+  }
+}
+
+// =================== UX HELPERS ===================
+
+/**
+ * Send loading message for long-running operations
+ */
+function sendLoadingMessage(chatId, operation = "xử lý") {
+  sendText(chatId, "⏳ Đang " + operation + ", vui lòng chờ...");
+}
+
+/**
+ * Edit loading message to show result
+ */
+function updateLoadingMessage(chatId, messageId, result) {
+  if (messageId) {
+    editText(chatId, messageId, result, null);
+  } else {
+    sendText(chatId, result);
+  }
+}
+
+/**
+ * IMPROVED PAGINATION: Create keyboard for transaction history navigation
+ */
+function createPaginationKeyboard(currentPage, totalPages, commandPrefix = "page") {
+  if (totalPages <= 1) return null;
+  
+  const keyboard = [];
+  const buttonsRow = [];
+  
+  // Previous page button
+  if (currentPage > 1) {
+    buttonsRow.push({
+      text: "⬅️ Trang trước",
+      callback_data: commandPrefix + "_" + (currentPage - 1)
+    });
+  }
+  
+  // Page indicator
+  buttonsRow.push({
+    text: `📄 ${currentPage}/${totalPages}`,
+    callback_data: "page_info" // Non-functional, just for display
+  });
+  
+  // Next page button  
+  if (currentPage < totalPages) {
+    buttonsRow.push({
+      text: "Trang sau ➡️",
+      callback_data: commandPrefix + "_" + (currentPage + 1)
+    });
+  }
+  
+  keyboard.push(buttonsRow);
+  
+  // Back to main menu button
+  keyboard.push([{
+    text: "🏠 Về menu chính",
+    callback_data: "back_to_main_view"
+  }]);
+  
+  return {
+    "inline_keyboard": keyboard
+  };
+}
+
+// =================== CALLBACK HANDLERS ===================
+
+function processConnectEmail(chatId) {
+  sendText(chatId, "Vui lòng nhập email của bạn:");
+}
+
+function processBankSelection(chatId, data) {
+  const bankName = data.split('_')[1]; 
+  saveBankToSheet(chatId, bankName); 
+  sendText(chatId, "Ngân hàng của bạn đã được kết nối thành công: " + bankName);
+}
+
+function processSubcategorySelection(chatId, messageId, data) {
+  let allocation = '';
+  let subCategory = '';
+  
+  if (data.startsWith(CALLBACK_PREFIX.SUB)) {
+    // Format mới ngắn: sub_0_1 (allocationIndex_subIndex)
+    const parts = data.split('_');
+    if (parts.length >= 3) {
+      const allocationIndex = parseInt(parts[1]);
+      const subCategoryIndex = parseInt(parts[2]);
+      
+      if (!isNaN(allocationIndex) && !isNaN(subCategoryIndex) && allocationIndex >= 0 && subCategoryIndex >= 0) {
+        allocation = allocations[allocationIndex];
+        if (allocation && subCategories[allocation] && subCategories[allocation][subCategoryIndex]) {
+          subCategory = subCategories[allocation][subCategoryIndex];
+        }
+      }
+    }
+  } else {
+    // Format cũ dài: subcategory_AllocationName_SubCategoryName
+    const parts = data.split('_');
+    allocation = parts[1];
+    subCategory = parts.slice(2).join('_');
+  }
+  
+  // Validation: Đảm bảo allocation và subCategory được parse thành công
+  if (!allocation || !subCategory) {
+    editText(chatId, messageId, "❌ Lỗi xử lý lựa chọn. Vui lòng thử lại.", null);
+    return;
+  }
+  
+  // Lấy thông tin giao dịch tạm từ cache
+  const tempTransaction = getTempTransaction(chatId);
+  if (tempTransaction) {
+    // Lưu giao dịch với subcategory và lấy sequence number
+    const sequenceNumber = addTransactionData(
+      chatId, 
+      tempTransaction.date, 
+      tempTransaction.description, 
+      tempTransaction.amount, 
+      allocation, 
+      tempTransaction.type,
+      subCategory
+    );
+    
+    // Lưu thông tin giao dịch vừa tạo để có thể chỉnh sửa
+    const transactionId = 'tx_' + Date.now(); // Unique ID cho transaction
+    const transactionInfo = {
+      userId: chatId,
+      transactionId: transactionId,
+      date: tempTransaction.date,
+      description: tempTransaction.description,
+      amount: tempTransaction.amount,
+      allocation: allocation,
+      type: tempTransaction.type,
+      subCategory: subCategory,
+      sequenceNumber: sequenceNumber, // Thêm STT vào transaction info
+      rowIndex: getLastRowIndex(chatId) // Lấy index của row vừa thêm
+    };
+    saveTransactionForEdit(chatId, transactionInfo, transactionId);
+    
+    // Xóa cache tạm
+    clearTempTransaction(chatId);
+    
+    // Thông báo thành công với keyboard chỉnh sửa (bao gồm STT)
+    const typeText = tempTransaction.type === TRANSACTION_TYPE.INCOME ? "thu nhập" : "chi tiêu";
+    const editKeyboard = createEditKeyboard(transactionId);
+    
+    editText(chatId, messageId,
+      "✅ Giao dịch #" + sequenceNumber + " - Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+      " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+      " vào hũ " + allocation + " với nhãn " + subCategory,
+      editKeyboard
+    );
+  }
+}
+
+function processEditTransaction(chatId, messageId, data) {
+  Logger.log("DEBUG: edit_transaction callback received for user: " + chatId);
+  const transactionId = data.startsWith(CALLBACK_PREFIX.EDIT_TRANSACTION) ? data.replace(CALLBACK_PREFIX.EDIT_TRANSACTION, '') : null;
+  Logger.log("DEBUG: Transaction ID: " + transactionId);
+  const transactionInfo = getTransactionForEdit(chatId, transactionId);
+  Logger.log("DEBUG: transactionInfo from cache: " + JSON.stringify(transactionInfo));
+  
+  if (transactionInfo) {
+    // Hiển thị keyboard chọn hũ mới với transactionId
+    const allocationKeyboard = createAllocationKeyboard(transactionInfo.transactionId);
+    Logger.log("DEBUG: Allocation keyboard created with " + allocationKeyboard.inline_keyboard.length + " rows");
+    
+    editText(chatId, messageId,
+      "🔄 Chỉnh sửa giao dịch: " + transactionInfo.description + 
+      " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
+      "\n\nVui lòng chọn hũ mới:",
+      allocationKeyboard
+    );
+    Logger.log("DEBUG: Edit message sent");
+  } else {
+    Logger.log("DEBUG: No transaction info found in cache");
+    editText(chatId, messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
+  }
+}
+
+function processShowTotalExpenses(chatId) {
+  const totalExpenses = getTotalAmountByType(chatId, TRANSACTION_TYPE.EXPENSE);
+  sendText(chatId, "Tổng chi tiêu của bạn là: " + totalExpenses.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), menuchi);
+}
+
+function processShowTotalIncome(chatId) {
+  sendTotalIncomeSummary(chatId, chatId);
+}
+
+function processShowCurrentBalance(chatId, messageId) {
+  const currentBalance = getCurrentBalance(chatId);
+  const balanceMessage = "💰 <b>Tổng quan tài chính:</b>\n\n" +
+    "💹 Số tiền hiện tại của bạn là: " + currentBalance.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  
+  const overviewKeyboard = {
+    "inline_keyboard": [
+      [
+        {
+          text: "🏺 Xem theo hũ",
+          callback_data: "getTotalAllocationBalances"
+        },
+        {
+          text: "🏷️ Xem theo nhãn",
+          callback_data: "view_subcategory_summary"
+        }
+      ],
+      [
+        {
+          text: "📋 Lịch sử giao dịch",
+          callback_data: "history"
+        }
+      ]
+    ]
+  };
+  
+  editText(chatId, messageId, balanceMessage, overviewKeyboard);
+}
+
+function processShowAllocationBalances(chatId, messageId) {
+  // Send loading message before heavy calculation
+  if (messageId) {
+    editText(chatId, messageId, "⏳ Đang tính toán số dư các hũ...", null);
+  }
+  sendTotalPhanboSummary(chatId, chatId, messageId);
+}
+
+// =================== MESSAGE HANDLERS ===================
+
+function processStartCommand(chatId, userName) {
+  sendText(chatId, 
+    '🐹 Xin chào ' + userName + '!\n\n' +
+    '🐹 <b>Thư ký Capybara</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
+    '• 📊 Theo dõi thu chi một cách chi tiết\n' +
+    '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
+    '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
+    '• 📈 Xem báo cáo và lịch sử giao dịch\n\n' +
+    '⚡ <b>Bắt đầu nhanh:</b>\n' +
+    '• Gõ <code>/chi ăn sáng 25000</code> để nhập chi tiêu\n' +
+    '• Gõ <code>/thu lương 10000000</code> để nhập thu nhập\n' +
+    '• Gõ <code>/help</code> để xem tất cả lệnh\n' +
+    '• Gõ <code>/menu</code> để xem menu tương tác\n\n' +
+    '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Thư ký Capybara!'
+  );
+}
+
+function processMenuCommand(chatId, userName) {
+  sendText(chatId, 'Xin chào ' + userName + '! Menu Thư ký Capybara tại đây.', keyBoard);
+}
+
+function processShowTotalMoney(chatId) {
+  const currentBalance = getCurrentBalance(chatId);
+  sendText(chatId, "💰 Số tiền hiện tại của bạn là: " + formatNumberWithSeparator(currentBalance));
+}
+
+function processShowTotalExpenseCommand(chatId) {
+  const totalExpenses = getTotalAmountByType(chatId, TRANSACTION_TYPE.EXPENSE);
+  sendText(chatId, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
+}
+
+function processDefaultMessage(chatId, userName) {
+  sendText(
+    chatId,
+    "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây."
+  );
+}
 
 function checkEmail() {
   const usersSpreadsheet = SpreadsheetApp.openById(main_sheet);
