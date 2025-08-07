@@ -4156,7 +4156,7 @@ function generateAndSendReport(context, period) {
   const fileName = `MoneyNe_Report_${context.chatId}_${new Date().getTime()}.csv`;
   let file = DriveApp.createFile(fileName, csvContent, MimeType.CSV);
 
-  const telegramUrl = `https://api.telegram.org/bot${telegramToken}`; // Assuming telegramToken is available globally
+  const telegramUrl = `https://api.telegram.org/bot${token}`; // Assuming telegramToken is available globally
   const url = telegramUrl + "/sendDocument";
   
   const payload = {

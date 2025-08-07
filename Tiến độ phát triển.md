@@ -26,5 +26,11 @@
 - [ ] Cập nhật Logic cốt lõi: Sửa đổi `getSheet` và `addTransactionData` để hỗ trợ group chat.
 - [ ] Giao diện người dùng trong Group: Cập nhật cú pháp nhập liệu và xem báo cáo cho group.
 
+### ✅ Tinh chỉnh Đã Hoàn tất
+- [x] Tinh chỉnh hàm `getSheet()`:
+    - [x] Đổi tên sheet chính thành "Transactions" khi tạo mới.
+    - [x] Tạo sheet "Budgets" với header ngay khi spreadsheet mới được tạo.
+- [x] Đồng bộ biến `token` trong `generateAndSendReport`.
+
 ---
-**Trạng thái hiện tại:** Đang tiến hành Giai đoạn 1: Hỗ trợ Xuất Báo Cáo.
+**Trạng thái hiện tại:** Sẵn sàng cho Giai đoạn 3: Hỗ trợ Group Chat.
