@@ -4181,71 +4181,76 @@ function handleCallbackQuery(callbackQuery) {
 /**
  * Handle all text messages and commands
  */
+/**
+ * Handle all text messages and commands - IMPROVED with Context & Unified Parser
+ */
 function handleMessage(message) {
-  const chatId = message.chat.id;
-  const userName = message.from.first_name;
-  const text = message.text;
+  const context = {
+    chatId: message.chat.id,
+    userName: message.from.first_name,
+    text: message.text,
+    message: message // Pass full message object if needed
+  };
+
+  Logger.log("MESSAGE: " + context.text + " from user " + context.chatId);
 
   // Handle voice messages with loading indicator
   if (message.voice) {
-    sendLoadingMessage(chatId, "xử lý tin nhắn voice");
-    processVoiceMessage(message.voice.file_id, chatId);
+    sendLoadingMessage(context.chatId, "xử lý tin nhắn voice");
+    processVoiceMessage(message.voice.file_id, context.chatId);
     return;
   }
 
   // Handle email validation
-  if (isValidEmail(text)) {
-    saveEmailToSheet(chatId, text);
-    sendBankOptions(chatId);
+  if (isValidEmail(context.text)) {
+    saveEmailToSheet(context.chatId, context.text);
+    sendBankOptions(context.chatId);
     return;
   }
 
   // Route commands and text
-  if (text === '/start') {
-    processStartCommand(chatId, userName);
-  } else if (text === '/menu') {
-    processMenuCommand(chatId, userName);
-  } else if (text === '/help' || text === '/commands') {
-    sendCommandsList(chatId);
-  } else if (text === '/tongtien') {
-    processShowTotalMoney(chatId);
-  } else if (text === '/tongchi') {
-    processShowTotalExpenseCommand(chatId);
-  } else if (text === '/tongthunhap') {
-    sendTotalIncomeSummary(chatId, chatId);
-  } else if (text === '/xemhu') {
-    sendLoadingMessage(chatId, "tính toán số dư các hũ");
-    sendTotalPhanboSummary(chatId, chatId);
-  } else if (text === '/xemnhan') {
-    sendLoadingMessage(chatId, "tính toán chi tiêu theo nhãn");
-    sendTotalSubCategorySummary(chatId, chatId);
-  } else if (text === '/tile' || text === '/tylе') {
-    sendPercentageSelectionMenu(chatId, chatId);
-  } else if (text === '/biеudo' || text === '/chart') {
-    sendChartSelectionMenu(chatId, chatId);
-  } else if (text === '/lichsu') {
-    sendLoadingMessage(chatId, "tải lịch sử giao dịch");
-    sendTransactionHistory(chatId, chatId);
-  } else if (text.startsWith('/chi ')) {
-    handleQuickExpense(chatId, chatId, text.substring(5), userName);
-  } else if (text.startsWith('/thu ')) {
-    handleQuickIncome(chatId, chatId, text.substring(5), userName);
-  } else if (text.startsWith('/del')) {
-    processDeleteCommand(chatId, text);
-  } else if (text === '/xoathunhap') {
-    processDeleteIncome(chatId);
-  } else if (text === '/xoachitieu') {
-    processDeleteExpenses(chatId);
-  } else if (text === '/xoatatca') {
-    processDeleteAll(chatId);
-  } else if (text.startsWith("/history")) {
-    processHistoryCommand(chatId, text);
-  } else if (text.includes("+")) {
-    processIncomeTransaction(chatId, text);
-  } else if (text.includes("-")) {
-    processExpenseTransaction(chatId, text);
+  if (context.text === '/start') {
+    processStartCommand(context);
+  } else if (context.text === '/menu') {
+    processMenuCommand(context);
+  } else if (context.text === '/help' || context.text === '/commands') {
+    sendCommandsList(context.chatId);
+  } else if (context.text === '/tongtien') {
+    processShowTotalMoney(context.chatId);
+  } else if (context.text === '/tongchi') {
+    processShowTotalExpenseCommand(context.chatId);
+  } else if (context.text === '/tongthunhap') {
+    sendTotalIncomeSummary(context.chatId, context.chatId);
+  } else if (context.text === '/xemhu') {
+    sendLoadingMessage(context.chatId, "tính toán số dư các hũ");
+    sendTotalPhanboSummary(context.chatId, context.chatId);
+  } else if (context.text === '/xemnhan') {
+    sendLoadingMessage(context.chatId, "tính toán chi tiêu theo nhãn");
+    sendTotalSubCategorySummary(context.chatId, context.chatId);
+  } else if (context.text === '/tile' || context.text === '/tylе') {
+    sendPercentageSelectionMenu(context.chatId, context.chatId);
+  } else if (context.text === '/biеudo' || context.text === '/chart') {
+    sendChartSelectionMenu(context.chatId, context.chatId);
+  } else if (context.text === '/lichsu') {
+    processTransactionHistoryCommand(context);
+  } else if (context.text.startsWith('/chi ')) {
+    processQuickExpenseCommand(context);
+  } else if (context.text.startsWith('/thu ')) {
+    processQuickIncomeCommand(context);
+  } else if (context.text.startsWith('/del')) {
+    processDeleteCommand(context.chatId, context.text);
+  } else if (context.text === '/xoathunhap') {
+    processDeleteIncome(context.chatId);
+  } else if (context.text === '/xoachitieu') {
+    processDeleteExpenses(context.chatId);
+  } else if (context.text === '/xoatatca') {
+    processDeleteAll(context.chatId);
+  } else if (context.text.startsWith("/history")) {
+    processHistoryCommand(context.chatId, context.text);
+  } else if (context.text.includes(" + ") || context.text.includes(" - ")) {
+    processTransactionText(context);
   } else {
-    processDefaultMessage(chatId, userName);
+    processDefaultMessage(context);
   }
 }
 
@@ -4313,10 +4318,168 @@ function createPaginationKeyboard(currentPage, totalPages, commandPrefix = "page
   };
 }
 
+// =================== OPTIMIZED DATABASE FUNCTIONS ===================
+
+/**
+ * OPTIMIZED: Get transaction history page directly from database
+ * Avoids loading all transactions for pagination - much faster for large datasets
+ * @param {string} userId
+ * @param {number} page - Page number (1-based)
+ * @param {number} pageSize - Number of transactions per page
+ * @returns {{transactions: Array, totalTransactions: number}}
+ */
+function getTransactionHistoryPage(userId, page, pageSize) {
+  try {
+    const sheet = getSheet(userId);
+    const lastRow = sheet.getLastRow();
+    const totalTransactions = lastRow > 1 ? lastRow - 1 : 0;
+    
+    if (totalTransactions === 0) {
+      return { transactions: [], totalTransactions: 0 };
+    }
+
+    // Calculate range for current page
+    const startIndex = (page - 1) * pageSize;
+    
+    // Get ALL data first for sorting (still need to sort by date)
+    // Note: This is a trade-off - we need sorting but want to limit data fetching
+    const allData = sheet.getRange("A2:G" + lastRow).getValues();
+    
+    // Sort by date (column 1, index 1) - newest first
+    allData.sort((a, b) => new Date(b[1]) - new Date(a[1]));
+    
+    // Now get the page slice
+    const endIndex = Math.min(startIndex + pageSize, totalTransactions);
+    const pageTransactions = allData.slice(startIndex, endIndex);
+
+    return { 
+      transactions: pageTransactions, 
+      totalTransactions: totalTransactions 
+    };
+    
+  } catch (err) {
+    Logger.log("Error in getTransactionHistoryPage: " + err.toString());
+    return { transactions: [], totalTransactions: 0 };
+  }
+}
+
+// =================== TRANSACTION PARSER ===================
+
+/**
+ * UNIFIED PARSER: Phân tích cú pháp văn bản để tạo dữ liệu giao dịch
+ * Hỗ trợ nhiều định dạng: /chi, /thu, "nội dung + số tiền", "nội dung - số tiền"
+ * @param {string} text - Chuỗi văn bản đầu vào
+ * @param {string} defaultType - Loại giao dịch mặc định (cho /chi, /thu)
+ * @returns {object | null} - Object chứa {description, amount, type} hoặc null
+ */
+function parseTransactionText(text, defaultType = null) {
+  try {
+    let type, delimiter, parts;
+    
+    // Format 1: "nội dung + số tiền" (thu nhập)
+    if (text.includes(' + ')) {
+      type = TRANSACTION_TYPE.INCOME;
+      delimiter = ' + ';
+      parts = text.split(delimiter);
+    } 
+    // Format 2: "nội dung - số tiền" (chi tiêu)
+    else if (text.includes(' - ')) {
+      type = TRANSACTION_TYPE.EXPENSE;
+      delimiter = ' - ';
+      parts = text.split(delimiter);
+    } 
+    // Format 3: "/chi nội dung số tiền" hoặc "/thu nội dung số tiền"
+    else {
+      const lastSpaceIndex = text.lastIndexOf(' ');
+      if (lastSpaceIndex === -1) return null;
+      
+      parts = [
+        text.substring(0, lastSpaceIndex).trim(),
+        text.substring(lastSpaceIndex + 1).trim()
+      ];
+      type = defaultType; // Sử dụng type được truyền vào từ command
+    }
+
+    if (parts.length < 2) return null;
+
+    const description = parts[0].trim();
+    const amountStr = parts[1].trim();
+
+    // Validation: Kiểm tra định dạng số
+    if (!amountStr.match(/^\d+$/)) return null;
+    const amount = parseInt(amountStr);
+    if (amount <= 0) return null;
+
+    // Validation: Kiểm tra description không rỗng
+    if (!description || description.length === 0) return null;
+
+    return { 
+      description, 
+      amount, 
+      type,
+      success: true
+    };
+    
+  } catch (err) {
+    Logger.log("Error in parseTransactionText: " + err.toString());
+    return null;
+  }
+}
+
+/**
+ * UNIFIED PROCESS: Bắt đầu quy trình ghi nhận giao dịch sau khi parse thành công
+ * @param {number} chatId - ID của chat
+ * @param {object} transactionData - Dữ liệu giao dịch đã parse
+ * @param {number} messageId - ID tin nhắn để edit (optional)
+ */
+function initiateTransactionProcess(chatId, transactionData, messageId = null) {
+  try {
+    const tempTransaction = {
+      userId: chatId,
+      date: new Date().toISOString().split('T')[0],
+      description: transactionData.description,
+      amount: transactionData.amount,
+      allocation: "Chi tiêu thiết yếu", // Default allocation
+      type: transactionData.type
+    };
+    
+    // Lưu transaction tạm vào cache
+    saveTempTransaction(chatId, tempTransaction);
+
+    // Tạo keyboard để chọn subcategory
+    const allocationIndex = allocations.indexOf(tempTransaction.allocation);
+    const keyboard = createSubCategoryKeyboard(tempTransaction.allocation, false, null, allocationIndex);
+    
+    // Tạo thông báo cho người dùng
+    const typeText = transactionData.type === TRANSACTION_TYPE.INCOME ? 'Thu nhập' : 'Chi tiêu';
+    const message = `⚡ <b>${typeText} nhanh:</b> ${transactionData.description} ` +
+      `<code>${transactionData.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</code>` +
+      ` vào hũ <b>${tempTransaction.allocation}</b>.\n\n` +
+      `🏷️ Vui lòng chọn nhãn cụ thể:`;
+    
+    // Gửi hoặc edit message
+    if (messageId) {
+      editText(chatId, messageId, message, keyboard);
+    } else {
+      sendText(chatId, message, keyboard);
+    }
+    
+  } catch (err) {
+    Logger.log("Error in initiateTransactionProcess: " + err.toString());
+    const errorMessage = "❌ Đã có lỗi xảy ra khi xử lý giao dịch. Vui lòng thử lại.";
+    
+    if (messageId) {
+      editText(chatId, messageId, errorMessage, null);
+    } else {
+      sendText(chatId, errorMessage);
+    }
+  }
+}
+
 // =================== CALLBACK HANDLERS ===================
 
 /**
- * IMPROVED: Transaction history with professional pagination
+ * OPTIMIZED: Transaction history with database-level pagination
  */
 function processTransactionHistoryWithPagination(context, page = 1) {
   try {
@@ -4326,13 +4489,18 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     }
     
     const pageSize = 10; // 10 transactions per page
-    const transactions = getTransactionHistory(context.chatId);
+    
+    // ✨ OPTIMIZED: Get only the page we need from database
+    const historyData = getTransactionHistoryPage(context.chatId, page, pageSize);
+    const { transactions, totalTransactions } = historyData;
     
     if (!transactions || transactions.length === 0) {
-      const message = "📭 <b>Chưa có giao dịch nào!</b>\n\n" +
+      const message = totalTransactions === 0 ? 
+        "📭 <b>Chưa có giao dịch nào!</b>\n\n" +
         "Hãy bắt đầu ghi nhận thu chi của bạn bằng cách:\n" +
         "• Gõ <code>/chi ăn sáng 25000</code> cho chi tiêu\n" +
-        "• Gõ <code>/thu lương 10000000</code> cho thu nhập";
+        "• Gõ <code>/thu lương 10000000</code> cho thu nhập" :
+        `📭 <b>Trang ${page} không có dữ liệu!</b>\n\nVui lòng chọn trang khác.`;
       
       if (context.messageId) {
         editText(context.chatId, context.messageId, message, null);
@@ -4342,20 +4510,17 @@ function processTransactionHistoryWithPagination(context, page = 1) {
       return;
     }
     
-    const totalPages = Math.ceil(transactions.length / pageSize);
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = Math.min(startIndex + pageSize, transactions.length);
-    const pageTransactions = transactions.slice(startIndex, endIndex);
+    const totalPages = Math.ceil(totalTransactions / pageSize);
     
     // Build message with pagination info
     let message = `📋 <b>Lịch sử giao dịch (Trang ${page}/${totalPages})</b>\n`;
-    message += `📊 Tổng: ${transactions.length} giao dịch\n\n`;
+    message += `📊 Tổng: ${totalTransactions} giao dịch\n\n`;
     
     // Calculate totals for this page
     let pageThuNhap = 0;
     let pageChiTieu = 0;
     
-    pageTransactions.forEach((transaction, index) => {
+    transactions.forEach((transaction, index) => {
       const sequenceNumber = transaction[0];
       const date = formatDate(transaction[1]);
       const description = transaction[2];
@@ -4382,7 +4547,7 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     });
     
     // Add page summary
-    message += `📈 <b>Tổng trang này:</b>\n`;
+    message += `📈 <b>Trang ${page} - Tóm tắt:</b>\n`;
     message += `💰 Thu nhập: ${pageThuNhap.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
     message += `💸 Chi tiêu: ${pageChiTieu.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
     message += `💹 Chênh lệch: ${(pageThuNhap - pageChiTieu).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
@@ -4604,25 +4769,41 @@ function processShowAllocationBalances(context) {
 
 // =================== MESSAGE HANDLERS ===================
 
-function processStartCommand(chatId, userName) {
-  sendText(chatId, 
-    '🐹 Xin chào ' + userName + '!\n\n' +
-    '🐹 <b>Thư ký Capybara</b> là trợ lý quản lý tài chính cá nhân giúp bạn:\n' +
-    '• 📊 Theo dõi thu chi một cách chi tiết\n' +
-    '• 🏺 Phân bổ tiền vào 6 hũ tài chính\n' +
-    '• 🏷 Gắn nhãn và phân loại từng giao dịch\n' +
-    '• 📈 Xem báo cáo và lịch sử giao dịch\n\n' +
-    '⚡ <b>Bắt đầu nhanh:</b>\n' +
-    '• Gõ <code>/chi ăn sáng 25000</code> để nhập chi tiêu\n' +
-    '• Gõ <code>/thu lương 10000000</code> để nhập thu nhập\n' +
-    '• Gõ <code>/help</code> để xem tất cả lệnh\n' +
-    '• Gõ <code>/menu</code> để xem menu tương tác\n\n' +
-    '🎯 Hãy bắt đầu quản lý tài chính thông minh cùng Thư ký Capybara!'
-  );
+/**
+ * IMPROVED: Start command with context pattern
+ */
+function processStartCommand(context) {
+  try {
+    sendText(context.chatId, 
+      '🎯 Chào ' + context.userName + '! Tôi là <b>MoneyNe Bot</b> - trợ lý tài chính thông minh của bạn!\n\n' +
+      '🔥 <b>Cách sử dụng nhanh:</b>\n' +
+      '• <code>/chi ăn sáng 25000</code> - Ghi nhận chi tiêu\n' +
+      '• <code>/thu lương 10000000</code> - Ghi nhận thu nhập\n' +
+      '• <code>ăn trưa - 50000</code> - Chi tiêu nhanh\n' +
+      '• <code>bonus + 2000000</code> - Thu nhập nhanh\n\n' +
+      '📊 <b>Xem báo cáo:</b>\n' +
+      '• <code>/xemhu</code> - Số dư từng hũ\n' +
+      '• <code>/lichsu</code> - Lịch sử giao dịch\n' +
+      '• <code>/menu</code> - Toàn bộ chức năng\n\n' +
+      '✨ Hãy bắt đầu ghi nhận tài chính của bạn ngay nhé!',
+      menuchi
+    );
+  } catch (err) {
+    Logger.log("Error in processStartCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra. Vui lòng thử lại sau.");
+  }
 }
 
-function processMenuCommand(chatId, userName) {
-  sendText(chatId, 'Xin chào ' + userName + '! Menu Thư ký Capybara tại đây.', keyBoard);
+/**
+ * IMPROVED: Menu command with context pattern
+ */
+function processMenuCommand(context) {
+  try {
+    sendText(context.chatId, "Chào " + context.userName + "! Chọn chức năng:", menuchi);
+  } catch (err) {
+    Logger.log("Error in processMenuCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra. Vui lòng thử lại sau.");
+  }
 }
 
 function processShowTotalMoney(chatId) {
@@ -4635,11 +4816,123 @@ function processShowTotalExpenseCommand(chatId) {
   sendText(chatId, "💸 Tổng chi tiêu của bạn là: " + formatNumberWithSeparator(totalExpenses));
 }
 
-function processDefaultMessage(chatId, userName) {
-  sendText(
-    chatId,
-    "Xin chào " + userName + "! Để biết thêm chi tiết về các lệnh, bạn có thể sử dụng lệnh /help hoặc cũng có thể xem menu Thư ký Capybara tại đây."
-  );
+/**
+ * IMPROVED: Default message with context pattern
+ */
+function processDefaultMessage(context) {
+  try {
+    sendText(context.chatId, 
+      "Xin chào " + context.userName + "! Tôi là MoneyNe Bot, trợ lý tài chính của bạn.\n\n" +
+      "🔥 <b>Ghi nhận nhanh:</b>\n" +
+      "• <code>/chi ăn sáng 25000</code>\n" +
+      "• <code>cafe - 15000</code>\n" +
+      "• <code>/thu bonus 500000</code>\n\n" +
+      "Gõ <code>/menu</code> để xem đầy đủ chức năng!", 
+      menuchi
+    );
+  } catch (err) {
+    Logger.log("Error in processDefaultMessage: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra. Vui lòng thử lại sau.");
+  }
+}
+
+/**
+ * IMPROVED: Quick expense command using unified parser
+ */
+function processQuickExpenseCommand(context) {
+  try {
+    const input = context.text.substring(5); // Remove '/chi '
+    const transactionData = parseTransactionText(input, TRANSACTION_TYPE.EXPENSE);
+    
+    if (transactionData) {
+      initiateTransactionProcess(context.chatId, transactionData);
+    } else {
+      sendText(context.chatId, 
+        "❌ <b>Sai định dạng!</b>\n\n" +
+        "✅ <b>Cách sử dụng đúng:</b>\n" +
+        "• <code>/chi ăn sáng 25000</code>\n" +
+        "• <code>/chi cafe 15000</code>\n" +
+        "• <code>/chi mua sách 120000</code>\n\n" +
+        "📝 <b>Lưu ý:</b> Số tiền phải là số nguyên dương"
+      );
+    }
+  } catch (err) {
+    Logger.log("Error in processQuickExpenseCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi xử lý chi tiêu. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * IMPROVED: Quick income command using unified parser
+ */
+function processQuickIncomeCommand(context) {
+  try {
+    const input = context.text.substring(5); // Remove '/thu '
+    const transactionData = parseTransactionText(input, TRANSACTION_TYPE.INCOME);
+    
+    if (transactionData) {
+      initiateTransactionProcess(context.chatId, transactionData);
+    } else {
+      sendText(context.chatId, 
+        "❌ <b>Sai định dạng!</b>\n\n" +
+        "✅ <b>Cách sử dụng đúng:</b>\n" +
+        "• <code>/thu lương 10000000</code>\n" +
+        "• <code>/thu bonus 500000</code>\n" +
+        "• <code>/thu bán hàng 200000</code>\n\n" +
+        "📝 <b>Lưu ý:</b> Số tiền phải là số nguyên dương"
+      );
+    }
+  } catch (err) {
+    Logger.log("Error in processQuickIncomeCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi xử lý thu nhập. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * IMPROVED: Process transaction text with + or - syntax using unified parser
+ */
+function processTransactionText(context) {
+  try {
+    const transactionData = parseTransactionText(context.text);
+    
+    if (transactionData) {
+      initiateTransactionProcess(context.chatId, transactionData);
+    } else {
+      sendText(context.chatId, 
+        "❌ <b>Sai định dạng!</b>\n\n" +
+        "✅ <b>Cách sử dụng đúng:</b>\n" +
+        "• <code>ăn sáng - 25000</code> (chi tiêu)\n" +
+        "• <code>lương tháng + 10000000</code> (thu nhập)\n" +
+        "• <code>cafe - 15000</code>\n" +
+        "• <code>bonus + 500000</code>\n\n" +
+        "📝 <b>Lưu ý:</b> Có dấu cách trước và sau dấu +/-"
+      );
+    }
+  } catch (err) {
+    Logger.log("Error in processTransactionText: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi xử lý giao dịch. Vui lòng thử lại.");
+  }
+}
+
+/**
+ * IMPROVED: Transaction history command with pagination
+ */
+function processTransactionHistoryCommand(context) {
+  try {
+    // Create a pseudo message context for pagination that doesn't require messageId initially
+    const paginationContext = {
+      chatId: context.chatId,
+      userName: context.userName,
+      data: 'history',
+      messageId: null // Will start fresh
+    };
+    
+    // Call pagination function directly
+    processTransactionHistoryWithPagination(paginationContext, 1);
+  } catch (err) {
+    Logger.log("Error in processTransactionHistoryCommand: " + err.toString());
+    sendText(context.chatId, "❌ Đã có lỗi xảy ra khi tải lịch sử. Vui lòng thử lại.");
+  }
 }
 
 function checkEmail() {
