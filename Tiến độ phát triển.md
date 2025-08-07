@@ -30,6 +30,16 @@
     - [x] Đổi tên sheet chính thành "Transactions" khi tạo mới.
     - [x] Tạo sheet "Budgets" với header ngay khi spreadsheet mới được tạo.
 - [x] Đồng bộ biến `token` trong `generateAndSendReport`.
+- [x] Tối ưu Hiệu suất Triệt để: Caching ID của Spreadsheet
+    - [x] Cập nhật hàm `getSpreadsheetId` để sử dụng `CacheService`.
+    - [x] Cập nhật hàm `getSheet` để sử dụng hàm `getSpreadsheetId` mới.
+
+## Các Nâng cấp Chuyên nghiệp (Professional-Level Refinements) (Đã hoàn thành)
+
+---
+**Trạng thái hiện tại:** Đã hoàn thành Giai đoạn 3: Sẵn sàng cho triển khai chính thức.
+
+## Các Nâng cấp Chuyên nghiệp (Professional-Level Refinements) (Đã hoàn thành)
 
 ---
 **Trạng thái hiện tại:** Đã hoàn thành Giai đoạn 3: Sẵn sàng cho triển khai chính thức.

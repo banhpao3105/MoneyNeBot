@@ -25,7 +25,8 @@ const webAppUrl = getWebAppUrl();
 
 
 function setWebhook() {
-  const url = telegramUrl + "/setWebhook?url=" + webAppUrl;
+  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN');
+  const url = `${telegramUrl}/setWebhook?url=${webAppUrl}?secret=${secret}`;
   const response = UrlFetchApp.fetch(url);
   Logger.log("Webhook response: " + response.getContentText());
   return response.getContentText();
@@ -3000,6 +3001,12 @@ const bankDomains = {
  * Main entry point - Router pattern (NEW VERSION)
  */
 function doPost(e) {
+  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN');
+  if (e.parameter.secret !== secret) {
+    Logger.log("Unauthorized request received.");
+    return; // Stop processing immediately
+  }
+
   try {
     const contents = JSON.parse(e.postData.contents);
     Logger.log("=== DOPOST DEBUG ===");
@@ -3134,7 +3141,17 @@ function handleMessage(message) {
   // Handle voice messages with loading indicator
   if (message.voice) {
     sendLoadingMessage(context.chatId, "xử lý tin nhắn voice");
-    processVoiceMessage(message.voice.file_id, context);
+    // Schedule the long-running task to run asynchronously
+    ScriptApp.newTrigger('triggerProcessVoiceMessage')
+      .timeBased()
+      .after(1000) // Run after 1 second
+      .create();
+    
+    // Store context and fileId temporarily for the triggered function to access
+    const properties = PropertiesService.getScriptProperties();
+    properties.setProperty('VOICE_MESSAGE_FILE_ID', message.voice.file_id);
+    properties.setProperty('VOICE_MESSAGE_CONTEXT', JSON.stringify(context));
+
     return;
   }
 
@@ -4394,16 +4411,28 @@ function sendBudgetAlert(userId, budgetName, limit, spent, budgetType) {
 }
 
 // Helper to get spreadsheet ID from userId (duplicate logic from getSheet, but necessary for checkAndSendBudgetAlerts)
-function getSpreadsheetId(userId) {
+function getSpreadsheetId(entityId) {
+  const cache = CacheService.getScriptCache();
+  const cachedId = cache.get(entityId.toString());
+  
+  if (cachedId) {
+    Logger.log("Sheet ID found in cache for: " + entityId);
+    return cachedId;
+  }
+
+  Logger.log("Sheet ID not in cache, fetching from UserList for: " + entityId);
   const usersSpreadsheet = SpreadsheetApp.openById(main_sheet);
   const usersSheet = usersSpreadsheet.getSheetByName('UserList'); 
   const userData = usersSheet.getDataRange().getValues();
-  for (let i = 0; i < userData.length; i++) {
-    if (userData[i][0] === userId) {
-      return userData[i][1];
+  
+  for (let i = 1; i < userData.length; i++) { // Start from 1 to skip header
+    if (userData[i][0] == entityId) {
+      const sheetId = userData[i][1];
+      cache.put(entityId.toString(), sheetId, 21600); // Lưu trong 6 tiếng
+      return sheetId;
     }
   }
-  return null; // Should not happen if getSheet is called first
+  return null;
 }
 
 /**
@@ -4455,5 +4484,20 @@ function processStartGroupCommand(context) {
   } catch (err) {
     Logger.log("Error in processStartGroupCommand: " + err.toString());
     updateLoadingMessage(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi khởi tạo bot cho nhóm. Vui lòng thử lại.");
+  }
+}
+
+function triggerProcessVoiceMessage() {
+  const properties = PropertiesService.getScriptProperties();
+  const fileId = properties.getProperty('VOICE_MESSAGE_FILE_ID');
+  const context = JSON.parse(properties.getProperty('VOICE_MESSAGE_CONTEXT'));
+
+  if (fileId && context) {
+    processVoiceMessage(fileId, context);
+    // Clean up properties after use
+    properties.deleteProperty('VOICE_MESSAGE_FILE_ID');
+    properties.deleteProperty('VOICE_MESSAGE_CONTEXT');
+  } else {
+    Logger.log("Error: Missing fileId or context for triggerProcessVoiceMessage.");
   }
 }
