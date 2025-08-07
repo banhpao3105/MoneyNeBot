@@ -25,8 +25,7 @@ const webAppUrl = getWebAppUrl();
 
 
 function setWebhook() {
-  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN');
-  const url = `${telegramUrl}/setWebhook?url=${webAppUrl}?secret=${secret}`;
+  const url = `${telegramUrl}/setWebhook?url=${webAppUrl}`;
   const response = UrlFetchApp.fetch(url);
   Logger.log("Webhook response: " + response.getContentText());
   return response.getContentText();
@@ -3001,12 +3000,6 @@ const bankDomains = {
  * Main entry point - Router pattern (NEW VERSION)
  */
 function doPost(e) {
-  const secret = PropertiesService.getScriptProperties().getProperty('SECRET_TOKEN');
-  if (e.parameter.secret !== secret) {
-    Logger.log("Unauthorized request received.");
-    return; // Stop processing immediately
-  }
-
   try {
     const contents = JSON.parse(e.postData.contents);
     Logger.log("=== DOPOST DEBUG ===");
@@ -3029,14 +3022,15 @@ function doPost(e) {
  */
 function handleCallbackQuery(callbackQuery) {
   const context = {
-    chatId: callbackQuery.from.id,
+    chatId: callbackQuery.from.id, // User ID for temp transaction storage
+    groupChatId: callbackQuery.message.chat.id, // Group ID for sending messages
     userName: callbackQuery.from.first_name,
     data: callbackQuery.data,
     messageId: callbackQuery.message.message_id,
     chatType: callbackQuery.chatType // Add chatType to context
   };
   
-  Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType);
+  Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType + " group: " + context.groupChatId);
 
   // Route to specific handlers based on callback data
   if (context.data === 'connect_email') {
@@ -3507,10 +3501,14 @@ function generateAmountSuggestion(originalText, description, amountStr, defaultT
  * @param {object} transactionData - Dữ liệu giao dịch đã parse
  * @param {number} messageId - ID tin nhắn để edit (optional)
  */
-function initiateTransactionProcess(chatId, transactionData, messageId = null, chatType = 'private', senderName = null) {
+function initiateTransactionProcess(chatId, transactionData, messageId = null, chatType = 'private', senderName = null, userId = null) {
   try {
+    // Use userId if provided (for group chat), otherwise use chatId (for private chat)
+    const actualUserId = userId || chatId;
+    
     const tempTransaction = {
-      userId: chatId,
+      userId: actualUserId, // Use the correct user ID
+      chatId: chatId, // Keep chatId for sending messages
       date: new Date().toISOString().split('T')[0],
       description: transactionData.description,
       amount: transactionData.amount,
@@ -3520,8 +3518,8 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null, c
       senderName: senderName // Add senderName to tempTransaction
     };
     
-    // Lưu transaction tạm vào cache
-    saveTempTransaction(chatId, tempTransaction);
+    // Lưu transaction tạm vào cache với actualUserId
+    saveTempTransaction(actualUserId, tempTransaction);
 
     // Tạo keyboard để chọn subcategory
     const allocationIndex = allocations.indexOf(tempTransaction.allocation);
@@ -3529,10 +3527,15 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null, c
     
     // Tạo thông báo cho người dùng
     const typeText = transactionData.type === TRANSACTION_TYPE.INCOME ? 'Thu nhập' : 'Chi tiêu';
-    const message = `⚡ <b>${typeText} nhanh:</b> ${transactionData.description} ` +
+    let message = `⚡ <b>${typeText} nhanh:</b> ${transactionData.description} ` +
       `<code>${transactionData.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}</code>` +
       ` vào hũ <b>${tempTransaction.allocation}</b>.\n\n` +
       `🏷️ Vui lòng chọn nhãn cụ thể:`;
+    
+    // Add sender name for group chats
+    if (chatType === 'group' || chatType === 'supergroup') {
+      message = "👤 " + senderName + "\n" + message;
+    }
     
     // Gửi hoặc edit message
     if (messageId) {
@@ -3694,16 +3697,20 @@ function processSubcategorySelection(context) {
     
     // Validation: Đảm bảo allocation và subCategory được parse thành công
     if (!allocation || !subCategory) {
-      editText(context.chatId, context.messageId, "❌ Lỗi xử lý lựa chọn. Vui lòng thử lại.", null);
+      const targetChatId = context.groupChatId || context.chatId; // Use group chat for groups, user chat for private
+      editText(targetChatId, context.messageId, "❌ Lỗi xử lý lựa chọn. Vui lòng thử lại.", null);
       return;
     }
     
-    // Lấy thông tin giao dịch tạm từ cache
+    // Lấy thông tin giao dịch tạm từ cache (sử dụng user ID)
     const tempTransaction = getTempTransaction(context.chatId);
     if (tempTransaction) {
+      // Use the correct entity ID for transaction storage
+      const entityId = tempTransaction.chatId || context.groupChatId || context.chatId;
+      
       // Lưu giao dịch với subcategory và lấy sequence number
       const sequenceNumber = addTransactionData(
-        context.chatId, 
+        entityId, 
         tempTransaction.date, 
         tempTransaction.description, 
         tempTransaction.amount, 
@@ -3726,7 +3733,7 @@ function processSubcategorySelection(context) {
         type: tempTransaction.type,
         subCategory: subCategory,
         sequenceNumber: sequenceNumber, // Thêm STT vào transaction info
-        rowIndex: getLastRowIndex(context.chatId) // Lấy index của row vừa thêm
+        rowIndex: getLastRowIndex(entityId) // Lấy index của row vừa thêm
       };
       saveTransactionForEdit(context.chatId, transactionInfo, transactionId);
       
@@ -3737,16 +3744,29 @@ function processSubcategorySelection(context) {
       const typeText = tempTransaction.type === TRANSACTION_TYPE.INCOME ? "thu nhập" : "chi tiêu";
       const editKeyboard = createEditKeyboard(transactionId);
       
-      editText(context.chatId, context.messageId,
-        "✅ Giao dịch #" + sequenceNumber + " - Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
+      // Use the correct chat ID for sending message
+      const targetChatId = context.groupChatId || context.chatId; // Use group chat for groups, user chat for private
+      
+      let successMessage = "✅ Giao dịch #" + sequenceNumber + " - Đã ghi nhận " + typeText + ": " + tempTransaction.description + 
         " " + tempTransaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
-        " vào hũ " + allocation + " với nhãn " + subCategory,
-        editKeyboard
+        " vào hũ " + allocation + " với nhãn " + subCategory;
+      
+      // Add sender name for group chats
+      if (context.chatType === 'group' || context.chatType === 'supergroup') {
+        successMessage = "👤 " + context.userName + "\n" + successMessage;
+      }
+      
+      editText(targetChatId, context.messageId, successMessage, editKeyboard
       );
+    } else {
+      // No temp transaction found
+      const targetChatId = context.groupChatId || context.chatId;
+      editText(targetChatId, context.messageId, "❌ Không tìm thấy giao dịch tạm. Vui lòng thử lại.", null);
     }
   } catch (err) {
     Logger.log("Error in processSubcategorySelection: " + err.toString());
-    editText(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi xử lý lựa chọn. Vui lòng thử lại.", null);
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, "❌ Đã có lỗi xảy ra khi xử lý lựa chọn. Vui lòng thử lại.", null);
   }
 }
 
@@ -3924,8 +3944,12 @@ function processQuickExpenseCommand(context) {
     const parseResult = parseTransactionText(input, TRANSACTION_TYPE.EXPENSE);
     
     if (parseResult.success) {
-      // Pass chatType and userName to initiateTransactionProcess
-      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
+      // For group chat, we need both chat ID (group) and user ID (sender)
+      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
+      const chatId = context.chatId; // Always use this for sending messages
+      
+      // Pass all needed parameters to initiateTransactionProcess
+      initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -3945,7 +3969,12 @@ function processQuickIncomeCommand(context) {
     const parseResult = parseTransactionText(input, TRANSACTION_TYPE.INCOME);
     
     if (parseResult.success) {
-      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
+      // For group chat, we need both chat ID (group) and user ID (sender)
+      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
+      const chatId = context.chatId; // Always use this for sending messages
+      
+      // Pass all needed parameters to initiateTransactionProcess
+      initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -3964,7 +3993,12 @@ function processTransactionText(context) {
     const parseResult = parseTransactionText(context.text);
     
     if (parseResult.success) {
-      initiateTransactionProcess(context.chatId, parseResult, null, context.chatType, context.userName);
+      // For group chat, we need both chat ID (group) and user ID (sender)
+      const userId = context.chatType === 'private' ? context.chatId : context.message.from.id;
+      const chatId = context.chatId; // Always use this for sending messages
+      
+      // Pass all needed parameters to initiateTransactionProcess
+      initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -4454,28 +4488,17 @@ function processStartGroupCommand(context) {
 
     if (groupSpreadsheet) {
       const welcomeMessage = `🎉 Chào mừng đến với MoneyNe Bot, nhóm **${context.message.chat.title}**!
-` +
-                             `Tôi sẽ giúp cả nhóm quản lý thu chi chung.
-` +
-                             `
-` +
-                             `Để bắt đầu, mọi người có thể dùng các lệnh sau:
-` +
-                             `
-` +
-                             `*   `/chi nội dung số_tiền` (VD: `/chi ăn trưa 50000`)
-` +
-                             `*   `/thu nội dung số_tiền` (VD: `/thu góp quỹ 100000`)
-` +
-                             `
-` +
-                             `Mỗi giao dịch sẽ được ghi nhận kèm theo tên của người gửi.
-` +
-                             `
-` +
-                             `Bạn có thể xem tổng quan bằng lệnh `/tongtien` hoặc `/lichsu`.
-` +
-                             `Chúc nhóm bạn quản lý tài chính hiệu quả!`;
+Tôi sẽ giúp cả nhóm quản lý thu chi chung.
+
+Để bắt đầu, mọi người có thể dùng các lệnh sau:
+
+*   \`/chi nội dung số_tiền\` (VD: \`/chi ăn trưa 50000\`)
+*   \`/thu nội dung số_tiền\` (VD: \`/thu góp quỹ 100000\`)
+
+Mỗi giao dịch sẽ được ghi nhận kèm theo tên của người gửi.
+
+Bạn có thể xem tổng quan bằng lệnh \`/tongtien\` hoặc \`/lichsu\`.
+Chúc nhóm bạn quản lý tài chính hiệu quả!`;
       updateLoadingMessage(context.chatId, context.messageId, welcomeMessage);
     } else {
       updateLoadingMessage(context.chatId, context.messageId, "❌ Đã có lỗi xảy ra khi khởi tạo bot cho nhóm. Vui lòng thử lại.");
@@ -4499,5 +4522,18 @@ function triggerProcessVoiceMessage() {
     properties.deleteProperty('VOICE_MESSAGE_CONTEXT');
   } else {
     Logger.log("Error: Missing fileId or context for triggerProcessVoiceMessage.");
+  }
+}
+
+// Test function to check if bot can send messages
+function testBotConnection() {
+  try {
+    const testChatId = "YOUR_CHAT_ID"; // Replace with your actual chat ID
+    const response = sendText(testChatId, "🤖 Bot test - nếu bạn nhận được tin nhắn này thì bot đã hoạt động!");
+    Logger.log("Test message result: " + JSON.stringify(response));
+    return "Test completed - check logs and Telegram";
+  } catch (err) {
+    Logger.log("Test failed: " + err.toString());
+    return "Test failed: " + err.toString();
   }
 }
