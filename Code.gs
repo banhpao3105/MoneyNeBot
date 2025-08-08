@@ -375,6 +375,11 @@ function editText(chatId, messageId, text, keyBoard) {
   }
 }
 
+// Wrapper function để compatibility với code hiện tại
+function sendMessage(chatId, text, keyBoard) {
+  return sendText(chatId, text, keyBoard);
+}
+
 const keyBoard = {
   "inline_keyboard": [
     [
@@ -480,32 +485,16 @@ function addExpenseData(userId, date, item, amount, allocation, subCategory) {
 }
 
 function getTotalIncome(userId) {
-  var sheet = getSheet(userId);
-  var data = sheet
-    .getRange(2, 4, sheet.getLastRow() - 1, 1) // Amount giờ ở cột D (4)
-    .getValues();
-  var total = 0;
-  for (var i = 0; i < data.length; i++) {
-    total += data[i][0];
-  }
-  return total;
+  return getTotalAmountByType(userId, "Thu nhập");
 }
 
 function getTotalExpenses(userId) {
-  var sheet = getSheet(userId);
-  var data = sheet
-    .getRange(2, 4, sheet.getLastRow() - 1, 1) // Amount giờ ở cột D (4)
-    .getValues();
-  var total = 0;
-  for (var i = 0; i < data.length; i++) {
-    total += data[i][0];
-  }
-  return total;
+  return getTotalAmountByType(userId, "Chi tiêu");
 }
 
 function getCurrentBalance(userId) {
-  var totalIncome = getTotalAmountByType(userId, "ThuNhap");
-  var totalExpenses = getTotalAmountByType(userId, "ChiTieu");
+  var totalIncome = getTotalAmountByType(userId, "Thu nhập");
+  var totalExpenses = getTotalAmountByType(userId, "Chi tiêu");
   return totalIncome - totalExpenses;
 }
 
@@ -516,18 +505,31 @@ function getTotalAllocationBalances(userId) {
   for (var i = 0; i < allocations.length; i++) {
     balances[allocations[i]] = 0;
   }
+  
   var sheet = getSheet(userId);
-  var data = sheet
-    .getRange(2, 4, sheet.getLastRow() - 1, 3) // Đọc từ cột D (Amount, Allocation, Type)
-    .getValues();
-  for (var i = 0; i < data.length; i++) {
-    var amount = data[i][0];    // Amount ở index 0 trong range
-    var allocation = data[i][1]; // Allocation ở index 1 trong range  
-    var type = data[i][2];      // Type ở index 2 trong range
+  const allData = sheet.getDataRange().getValues();
+  
+  if (allData.length < 3) return balances; // Không có data
+  
+  // Xác định cấu trúc dựa vào data row đầu tiên
+  const firstDataRow = allData[2];
+  const isGroupChat = firstDataRow.length === 8;
+  
+  // Xác định index các cột
+  const amountColumnIndex = isGroupChat ? 4 : 3;     // Group: cột E, Private: cột D
+  const allocationColumnIndex = isGroupChat ? 5 : 4; // Group: cột F, Private: cột E  
+  const typeColumnIndex = isGroupChat ? 6 : 5;       // Group: cột G, Private: cột F
+  
+  for (var i = 2; i < allData.length; i++) { // Bắt đầu từ row 3 (index 2)
+    var row = allData[i];
+    var amount = parseFloat(row[amountColumnIndex]) || 0;
+    var allocation = row[allocationColumnIndex];
+    var type = row[typeColumnIndex];
+    
     if (allocations.includes(allocation)) {
-      if (type === "ThuNhap") {
+      if (type === "Thu nhập") {
         balances[allocation] += amount;
-      } else if (type === "ChiTieu") {
+      } else if (type === "Chi tiêu") {
         balances[allocation] -= amount;
       }
     }
@@ -2444,18 +2446,34 @@ function getTotalAmountByType(userId, type) {
   const sheet = getSheet(userId);
   const lastRow = sheet.getLastRow();
   
-  if (lastRow < 2) return 0; // No data rows
+  if (lastRow < 3) return 0; // No data rows (cần ít nhất 3 rows: title, header, data)
   
-  // Only read columns D and F (Amount and Type) from row 2 to last row
-  const data = sheet.getRange(2, 4, lastRow - 1, 1).getValues(); // Amount column (D)
-  const typeData = sheet.getRange(2, 6, lastRow - 1, 1).getValues(); // Type column (F)
+  // Lấy toàn bộ data để xác định cấu trúc
+  const allData = sheet.getDataRange().getValues();
+  
+  if (allData.length < 3) return 0;
+  
+  // Xác định cấu trúc dựa vào data row đầu tiên (row index 2)
+  const firstDataRow = allData[2];
+  const isGroupChat = firstDataRow.length === 8; // Group có 8 cột, private có 7 cột
+  
+  // Xác định index các cột
+  const amountColumnIndex = isGroupChat ? 4 : 3; // Group: cột E (index 4), Private: cột D (index 3)
+  const typeColumnIndex = isGroupChat ? 6 : 5;   // Group: cột G (index 6), Private: cột F (index 5)
+  
+  Logger.log("DEBUG getTotalAmountByType: isGroup=" + isGroupChat + ", amountCol=" + amountColumnIndex + ", typeCol=" + typeColumnIndex);
   
   let total = 0;
-  for (let i = 0; i < data.length; i++) {
-    if (typeData[i][0] === type) {
-      total += data[i][0];
+  for (let i = 2; i < allData.length; i++) { // Bắt đầu từ row 3 (index 2)
+    const row = allData[i];
+    if (row[typeColumnIndex] === type) {
+      const amount = parseFloat(row[amountColumnIndex]) || 0;
+      total += amount;
+      Logger.log("DEBUG: Found " + type + " transaction: " + amount);
     }
   }
+  
+  Logger.log("DEBUG: Total " + type + ": " + total);
   return total;
 }
 
@@ -2679,6 +2697,189 @@ function deleteTransactionByRow(userId, rowToDelete) {
     return true; 
   } else {
     return false; 
+  }
+}
+
+// Function để xóa tất cả thu nhập
+function processDeleteIncome(entityId) {
+  var keyboard = {
+    inline_keyboard: [
+      [
+        { text: '✅ Xác nhận xóa', callback_data: 'confirm_delete_income' },
+        { text: '❌ Hủy', callback_data: 'cancel_delete' }
+      ]
+    ]
+  };
+  
+  sendMessage(entityId, '⚠️ Bạn có chắc muốn xóa TẤT CẢ thu nhập?\n\nHành động này không thể hoàn tác!', keyboard);
+}
+
+// Function để xóa tất cả chi tiêu
+function processDeleteExpenses(entityId) {
+  Logger.log("DEBUG: processDeleteExpenses called for entityId: " + entityId);
+  
+  var keyboard = {
+    inline_keyboard: [
+      [
+        { text: '✅ Xác nhận xóa', callback_data: 'confirm_delete_expenses' },
+        { text: '❌ Hủy', callback_data: 'cancel_delete' }
+      ]
+    ]
+  };
+  
+  sendMessage(entityId, '⚠️ Bạn có chắc muốn xóa TẤT CẢ chi tiêu?\n\nHành động này không thể hoàn tác!', keyboard);
+}
+
+// Function để xóa tất cả dữ liệu
+function processDeleteAll(entityId) {
+  var keyboard = {
+    inline_keyboard: [
+      [
+        { text: '✅ Xác nhận xóa', callback_data: 'confirm_delete_all' },
+        { text: '❌ Hủy', callback_data: 'cancel_delete' }
+      ]
+    ]
+  };
+  
+  sendMessage(entityId, '⚠️ Bạn có chắc muốn xóa TẤT CẢ dữ liệu?\n\nHành động này không thể hoàn tác!', keyboard);
+}
+
+// Function thực hiện xóa thu nhập
+function executeDeleteIncome(entityId) {
+  try {
+    var sheet = getSheet(entityId);
+    var data = sheet.getDataRange().getValues();
+    
+    if (data.length <= 2) {
+      sendMessage(entityId, '📝 Không có dữ liệu để xóa!');
+      return;
+    }
+    
+    // Xác định cột chứa type dựa vào số cột của data row đầu tiên
+    var firstDataRow = data[2]; // Row đầu tiên có data (index 2)
+    var typeColumnIndex = firstDataRow.length === 7 ? 5 : 6; // 7 cột = private (type ở index 5), 8 cột = group (type ở index 6)
+    
+    Logger.log("DEBUG: First data row columns: " + firstDataRow.length + ", type column index: " + typeColumnIndex);
+    
+    // Tìm và xóa tất cả rows có loại TRANSACTION_TYPE.INCOME
+    var rowsToDelete = [];
+    for (var i = 2; i < data.length; i++) { // Bắt đầu từ row 3 (index 2)
+      if (data[i][typeColumnIndex] === TRANSACTION_TYPE.INCOME) {
+        rowsToDelete.push(i + 1); // +1 vì sheet bắt đầu từ 1
+        Logger.log("DEBUG: Found income row: " + (i + 1) + ", type: " + data[i][typeColumnIndex]);
+      }
+    }
+    
+    Logger.log("DEBUG: Found " + rowsToDelete.length + " income rows to delete");
+    
+    // Xóa từ dưới lên để không bị lệch index
+    for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+      sheet.deleteRow(rowsToDelete[j]);
+    }
+    
+    var count = rowsToDelete.length;
+    return `✅ Đã xóa ${count} giao dịch thu nhập!`;
+    
+  } catch (error) {
+    Logger.log('Error in executeDeleteIncome: ' + error.toString());
+    return '❌ Có lỗi xảy ra khi xóa thu nhập!';
+  }
+}
+
+// Function thực hiện xóa chi tiêu
+function executeDeleteExpenses(entityId) {
+  try {
+    var sheet = getSheet(entityId);
+    var data = sheet.getDataRange().getValues();
+    
+    if (data.length <= 2) {
+      sendMessage(entityId, '📝 Không có dữ liệu để xóa!');
+      return;
+    }
+    
+    // Xác định cột chứa type dựa vào số cột của data row đầu tiên
+    var firstDataRow = data[2]; // Row đầu tiên có data (index 2)
+    var typeColumnIndex = firstDataRow.length === 7 ? 5 : 6; // 7 cột = private (type ở index 5), 8 cột = group (type ở index 6)
+    
+    Logger.log("DEBUG: First data row columns: " + firstDataRow.length + ", type column index: " + typeColumnIndex);
+    
+    // Debug: Log tất cả các giá trị trong cột type để kiểm tra
+    Logger.log("DEBUG: All type values in data:");
+    for (var i = 2; i < data.length; i++) {
+      Logger.log("DEBUG: Row " + (i + 1) + ", Type column value: '" + data[i][typeColumnIndex] + "'");
+    }
+    
+    // Tìm và xóa tất cả rows có loại TRANSACTION_TYPE.EXPENSE
+    var rowsToDelete = [];
+    for (var i = 2; i < data.length; i++) { // Bắt đầu từ row 3 (index 2)
+      var typeValue = data[i][typeColumnIndex];
+      Logger.log("DEBUG: Checking row " + (i + 1) + ", type: '" + typeValue + "', comparing with '" + TRANSACTION_TYPE.EXPENSE + "'");
+      
+      if (typeValue === TRANSACTION_TYPE.EXPENSE) {
+        rowsToDelete.push(i + 1); // +1 vì sheet bắt đầu từ 1
+        Logger.log("DEBUG: Found expense row: " + (i + 1) + ", type: " + typeValue);
+      }
+    }
+    
+    Logger.log("DEBUG: Found " + rowsToDelete.length + " expense rows to delete");
+    
+    // Xóa từ dưới lên để không bị lệch index
+    for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+      sheet.deleteRow(rowsToDelete[j]);
+    }
+    
+    var count = rowsToDelete.length;
+    return `✅ Đã xóa ${count} giao dịch chi tiêu!`;
+    
+  } catch (error) {
+    Logger.log('Error in executeDeleteExpenses: ' + error.toString());
+    return '❌ Có lỗi xảy ra khi xóa chi tiêu!';
+  }
+}
+
+// Function thực hiện xóa tất cả
+function executeDeleteAll(entityId) {
+  try {
+    var sheet = getSheet(entityId);
+    var numRows = sheet.getLastRow();
+    
+    if (numRows > 2) { // Chỉ xóa nếu có dữ liệu (giữ lại header)
+      sheet.deleteRows(3, numRows - 2); // Xóa từ row 3 trở đi
+      return '✅ Đã xóa tất cả dữ liệu giao dịch!';
+    } else {
+      return '📝 Không có dữ liệu để xóa!';
+    }
+    
+  } catch (error) {
+    console.error('Error in executeDeleteAll:', error);
+    return '❌ Có lỗi xảy ra khi xóa dữ liệu!';
+  }
+}
+
+// Function để xử lý lệnh /del (xóa giao dịch theo số thứ tự)
+function processDeleteCommand(entityId, text) {
+  try {
+    var parts = text.split(' ');
+    if (parts.length < 2) {
+      sendMessage(entityId, '❌ Vui lòng nhập: /del [số thứ tự]\n\nVí dụ: /del 5');
+      return;
+    }
+    
+    var rowNumber = parseInt(parts[1]);
+    if (isNaN(rowNumber) || rowNumber < 1) {
+      sendMessage(entityId, '❌ Số thứ tự không hợp lệ!');
+      return;
+    }
+    
+    if (deleteTransactionByRow(entityId, rowNumber)) {
+      sendMessage(entityId, `✅ Đã xóa giao dịch số ${rowNumber}!`);
+    } else {
+      sendMessage(entityId, `❌ Không tìm thấy giao dịch số ${rowNumber}!`);
+    }
+    
+  } catch (error) {
+    console.error('Error in processDeleteCommand:', error);
+    sendMessage(entityId, '❌ Có lỗi xảy ra khi xóa giao dịch!');
   }
 }
 
@@ -3127,9 +3328,52 @@ function handleCallbackQuery(callbackQuery) {
     processAddEditBudget(context);
   } else if (context.data === 'delete_budget') {
     processDeleteBudget(context);
+  } else if (context.data === 'confirm_delete_income') {
+    const result = executeDeleteIncome(context.groupChatId || context.chatId);
+    editText(context.groupChatId || context.chatId, context.messageId, result);
+  } else if (context.data === 'confirm_delete_expenses') {
+    const result = executeDeleteExpenses(context.groupChatId || context.chatId);
+    editText(context.groupChatId || context.chatId, context.messageId, result);
+  } else if (context.data === 'confirm_delete_all') {
+    const result = executeDeleteAll(context.groupChatId || context.chatId);
+    editText(context.groupChatId || context.chatId, context.messageId, result);
+  } else if (context.data === 'cancel_delete') {
+    editText(context.groupChatId || context.chatId, context.messageId, '❌ Đã hủy thao tác xóa.');
   } else {
     Logger.log("Unhandled callback: " + context.data);
   }
+}
+
+/**
+ * Helper function to check if text matches a command (with or without bot username)
+ */
+function isCommand(text, command) {
+  if (!text || !command) return false;
+  const cleanText = text.trim().toLowerCase();
+  const cleanCommand = command.toLowerCase();
+  
+  Logger.log("DEBUG: isCommand - text: '" + cleanText + "', command: '" + cleanCommand + "'");
+  
+  // Check exact match
+  if (cleanText === cleanCommand) {
+    Logger.log("DEBUG: Exact match found");
+    return true;
+  }
+  
+  // Check with bot username
+  if (cleanText === cleanCommand + '@capybara_money_bot') {
+    Logger.log("DEBUG: Bot username match found");
+    return true;
+  }
+  
+  // Check if it includes the command (for backwards compatibility)
+  if (cleanText.includes(cleanCommand.replace('/', ''))) {
+    Logger.log("DEBUG: Includes match found");
+    return true;
+  }
+  
+  Logger.log("DEBUG: No match found");
+  return false;
 }
 
 /**
@@ -3176,21 +3420,21 @@ function handleMessage(message) {
   }
 
   // Route commands and text
-  if (context.text === '/start') {
+  if (isCommand(context.text, '/start')) {
     processStartCommand(context);
-  } else if (context.text === '/startgroup') {
+  } else if (isCommand(context.text, '/startgroup')) {
     processStartGroupCommand(context);
-  } else if (context.text === '/menu') {
+  } else if (isCommand(context.text, '/menu')) {
     processMenuCommand(context);
-  } else if (context.text === '/help' || context.text === '/commands') {
+  } else if (isCommand(context.text, '/help') || isCommand(context.text, '/commands')) {
     sendCommandsList(context.chatId);
-  } else if (context.text === '/tongtien') {
+  } else if (isCommand(context.text, '/tongtien')) {
     processShowTotalMoney(context);
-  } else if (context.text === '/tongchi') {
+  } else if (isCommand(context.text, '/tongchi')) {
     processShowTotalExpenseCommand(context);
-  } else if (context.text === '/tongthunhap') {
+  } else if (isCommand(context.text, '/tongthunhap')) {
     sendTotalIncomeSummary(context);
-  } else if (context.text === '/xemhu') {
+  } else if (isCommand(context.text, '/xemhu')) {
     sendLoadingMessage(context.chatId, "tính toán số dư các hũ");
     sendTotalPhanboSummary(context);
   } else if (context.text === '/xemnhan') {
@@ -3210,15 +3454,19 @@ function handleMessage(message) {
   } else if (context.text.startsWith('/thu ')) {
     processQuickIncomeCommand(context);
   } else if (context.text.startsWith('/del')) {
+    Logger.log("DEBUG: Processing delete command: " + context.text);
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     processDeleteCommand(entityId, context.text);
-  } else if (context.text === '/xoathunhap') {
+  } else if (isCommand(context.text, '/xoathunhap')) {
+    Logger.log("DEBUG: Processing delete income command");
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     processDeleteIncome(entityId);
-  } else if (context.text === '/xoachitieu') {
+  } else if (isCommand(context.text, '/xoachitieu')) {
+    Logger.log("DEBUG: Processing delete expenses command");
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     processDeleteExpenses(entityId);
-  } else if (context.text === '/xoatatca') {
+  } else if (isCommand(context.text, '/xoatatca')) {
+    Logger.log("DEBUG: Processing delete all command");
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     processDeleteAll(entityId);
   } else if (context.text.startsWith("/history")) {
@@ -3231,6 +3479,8 @@ function handleMessage(message) {
   } else if (context.text.includes(" + ") || context.text.includes(" - ")) {
     processTransactionText(context);
   } else {
+    Logger.log("DEBUG: Unhandled message - sending default response: '" + context.text + "'");
+    Logger.log("DEBUG: Text length: " + context.text.length + ", first 20 chars: '" + context.text.substring(0, 20) + "'");
     processDefaultMessage(context);
   }
 }
@@ -3990,9 +4240,13 @@ function processShowTotalMoney(context) {
 }
 
 function processShowTotalExpenseCommand(context) {
+  Logger.log("DEBUG: processShowTotalExpenseCommand called for chatId: " + context.chatId);
+  
   // For group chat, use group ID to get transactions
   const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
   const totalExpenses = getTotalAmountByType(entityId, TRANSACTION_TYPE.EXPENSE);
+  
+  Logger.log("DEBUG: Total expenses calculated: " + totalExpenses);
   
   let message = "💸 Tổng chi tiêu: " + formatNumberWithSeparator(totalExpenses);
   
