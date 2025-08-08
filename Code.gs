@@ -3426,7 +3426,7 @@ function handleMessage(message) {
     processStartGroupCommand(context);
   } else if (isCommand(context.text, '/menu')) {
     processMenuCommand(context);
-  } else if (isCommand(context.text, '/help') || isCommand(context.text, '/commands')) {
+  } else if (isCommand(context.text, '/help')) {
     sendCommandsList(context.chatId);
   } else if (isCommand(context.text, '/tongtien')) {
     processShowTotalMoney(context);
