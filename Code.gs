@@ -3370,10 +3370,28 @@ function handleCallbackQuery(callbackQuery) {
   } else if (context.data === 'chart_subcategory') {
     sendSubCategoryChart(context.chatId, null, context.messageId);
   } else if (context.data === 'history') {
-  processTransactionHistoryWithPagination(context, 1); // Default to page 1
+  processTransactionHistoryWithPagination(context, 1, 'all', 'asc'); // Default to page 1, all, asc
   } else if (context.data.startsWith('history_page_')) {
-    const page = parseInt(context.data.replace('history_page_', ''));
-  processTransactionHistoryWithPagination(context, page);
+    // history_page_{page}_{filter}_{sort}
+    const parts = context.data.split('_');
+    const page = parseInt(parts[2], 10) || 1;
+    const filter = parts[3] || 'all';
+    const sort = parts[4] || 'asc';
+    processTransactionHistoryWithPagination(context, page, filter, sort);
+  } else if (context.data.startsWith('history_filter_')) {
+    // history_filter_{filter}_{page}_{sort}
+    const parts = context.data.split('_');
+    const filter = parts[2] || 'all';
+    const page = parseInt(parts[3], 10) || 1;
+    const sort = parts[4] || 'asc';
+    processTransactionHistoryWithPagination(context, page, filter, sort);
+  } else if (context.data.startsWith('history_sort_')) {
+    // history_sort_{sort}_{page}_{filter}
+    const parts = context.data.split('_');
+    const sort = parts[2] || 'asc';
+    const page = parseInt(parts[3], 10) || 1;
+    const filter = parts[4] || 'all';
+    processTransactionHistoryWithPagination(context, page, filter, sort);
   } else if (context.data === 'view_subcategory_summary') {
     sendTotalSubCategorySummary(context.chatId, null, context.messageId);
   } else if (context.data === 'view_by_subcategory') {
@@ -3528,6 +3546,16 @@ function handleMessage(message) {
     sendChartSelectionMenu(context.chatId, entityId);
   } else if (isCommand(context.text, '/lichsu')) {
     processTransactionHistoryCommand(context);
+  } else if (isCommand(context.text, '/lichsuthu')) {
+    // Open income-only history
+    const sent = sendText(context.chatId, "⏳ Đang tải lịch sử thu nhập...");
+    const paginationContext = { chatId: context.chatId, userName: context.userName, data: 'history', messageId: sent && sent.message_id, chatType: context.chatType, groupChatId: context.groupChatId };
+    processTransactionHistoryWithPagination(paginationContext, 1, 'income', 'asc');
+  } else if (isCommand(context.text, '/lichsuchi')) {
+    // Open expense-only history
+    const sent = sendText(context.chatId, "⏳ Đang tải lịch sử chi tiêu...");
+    const paginationContext = { chatId: context.chatId, userName: context.userName, data: 'history', messageId: sent && sent.message_id, chatType: context.chatType, groupChatId: context.groupChatId };
+    processTransactionHistoryWithPagination(paginationContext, 1, 'expense', 'asc');
   } else if (context.text.startsWith('/chi ')) {
     processQuickExpenseCommand(context);
   } else if (context.text.startsWith('/thu ')) {
@@ -3628,6 +3656,39 @@ function createPaginationKeyboard(currentPage, totalPages, commandPrefix = "page
   };
 }
 
+// Build History control keyboard (filters + sort + pagination)
+function createHistoryKeyboard(page, totalPages, filter = 'all', sort = 'asc') {
+  const kb = [];
+  // Filter row: hide the current filter, show only other choices
+  const filterRow = [];
+  if (filter !== 'all') {
+    filterRow.push({ text: 'Xem tất cả', callback_data: `history_filter_all_${page}_${sort}` });
+  }
+  if (filter !== 'income') {
+    filterRow.push({ text: 'Lịch sử thu', callback_data: `history_filter_income_${page}_${sort}` });
+  }
+  if (filter !== 'expense') {
+    filterRow.push({ text: 'Lịch sử chi', callback_data: `history_filter_expense_${page}_${sort}` });
+  }
+  if (filterRow.length > 0) kb.push(filterRow);
+
+  // Sort row: show only the alternative sort option
+  const sortRow = [];
+  if (sort === 'asc') {
+    sortRow.push({ text: 'Lọc từ mới đến cũ', callback_data: `history_sort_desc_${page}_${filter}` });
+  } else {
+    sortRow.push({ text: 'Lọc từ cũ đến mới', callback_data: `history_sort_asc_${page}_${filter}` });
+  }
+  kb.push(sortRow);
+  // Pagination row
+  const pag = [];
+  if (page > 1) pag.push({ text: '⬅️', callback_data: `history_page_${page-1}_${filter}_${sort}` });
+  pag.push({ text: `📄 ${page}/${totalPages}`, callback_data: 'history_page_info' });
+  if (page < totalPages) pag.push({ text: '➡️', callback_data: `history_page_${page+1}_${filter}_${sort}` });
+  kb.push(pag);
+  return { inline_keyboard: kb };
+}
+
 // =================== OPTIMIZED DATABASE FUNCTIONS ===================
 
 /**
@@ -3638,7 +3699,7 @@ function createPaginationKeyboard(currentPage, totalPages, commandPrefix = "page
  * @param {number} pageSize - Number of transactions per page
  * @returns {{transactions: Array, totalTransactions: number}}
  */
-function getTransactionHistoryPage(userId, page, pageSize) {
+function getTransactionHistoryPage(userId, page, pageSize, filter = 'all', sort = 'asc') {
   try {
     Logger.log("DEBUG: getTransactionHistoryPage called for userId: " + userId + ", page: " + page + ", pageSize: " + pageSize);
 
@@ -3655,26 +3716,43 @@ function getTransactionHistoryPage(userId, page, pageSize) {
       return { transactions: [], totalTransactions: 0 };
     }
 
-    const totalTransactions = dataRowCount; // each data row is one transaction
+    // Get ALL data rows first for filtering/sorting (handle both private 7 cols and group 8 cols)
+    const allData = sheet.getRange(firstDataRow, 1, dataRowCount, lastCol).getValues();
+    Logger.log("DEBUG: Retrieved " + allData.length + " data rows of " + lastCol + " columns");
+
+    // Determine sheet structure to find type column
+    const isGroupChat = allData[0] && allData[0].length >= 8;
+    const typeCol = isGroupChat ? 6 : 5; // G or F
+
+    // Filter by type if requested
+    let filtered = allData;
+    if (filter === 'income') {
+      filtered = allData.filter(r => isTypeMatch(r[typeCol], TRANSACTION_TYPE.INCOME));
+    } else if (filter === 'expense') {
+      filtered = allData.filter(r => isTypeMatch(r[typeCol], TRANSACTION_TYPE.EXPENSE));
+    }
+
+    // Sort by calendar date then STT
+    filtered.sort((a, b) => {
+      const dA = new Date(a[1]);
+      const dB = new Date(b[1]);
+      const keyA = (!isNaN(dA.getTime())) ? (dA.getFullYear()*10000 + (dA.getMonth()+1)*100 + dA.getDate()) : 0;
+      const keyB = (!isNaN(dB.getTime())) ? (dB.getFullYear()*10000 + (dB.getMonth()+1)*100 + dB.getDate()) : 0;
+      if (keyA !== keyB) return sort === 'asc' ? (keyA - keyB) : (keyB - keyA);
+      const sA = parseInt(a[0], 10) || 0;
+      const sB = parseInt(b[0], 10) || 0;
+      return sort === 'asc' ? (sA - sB) : (sB - sA);
+    });
+
+    const totalTransactions = filtered.length; // after filtering
 
     // Calculate range for current page
     const startIndex = (page - 1) * pageSize;
     Logger.log("DEBUG: startIndex: " + startIndex);
 
-    // Get ALL data rows first for sorting (handle both private 7 cols and group 8 cols)
-    const allData = sheet.getRange(firstDataRow, 1, dataRowCount, lastCol).getValues();
-    Logger.log("DEBUG: Retrieved " + allData.length + " data rows of " + lastCol + " columns");
-
-    // Sort by date (column B, index 1) - newest first (guard invalid dates)
-    allData.sort((a, b) => {
-      const da = new Date(a[1]);
-      const db = new Date(b[1]);
-      return db - da;
-    });
-
     // Page slice
     const endIndex = Math.min(startIndex + pageSize, totalTransactions);
-    const pageTransactions = allData.slice(startIndex, endIndex);
+  const pageTransactions = filtered.slice(startIndex, endIndex);
     Logger.log("DEBUG: Returning " + pageTransactions.length + " transactions for page " + page);
 
     return { 
@@ -3948,7 +4026,7 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null, c
 /**
  * OPTIMIZED: Transaction history with database-level pagination
  */
-function processTransactionHistoryWithPagination(context, page = 1) {
+function processTransactionHistoryWithPagination(context, page = 1, filter = 'all', sort = 'asc') {
   try {
     Logger.log("DEBUG: processTransactionHistoryWithPagination called for chatId: " + context.chatId + ", page: " + page);
     const targetChatId = context.groupChatId || context.chatId;
@@ -3965,7 +4043,7 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     Logger.log("DEBUG: entityId: " + entityId + ", chatType: " + context.chatType);
     
     // ✨ OPTIMIZED: Get only the page we need from database
-    const historyData = getTransactionHistoryPage(entityId, page, pageSize);
+  const historyData = getTransactionHistoryPage(entityId, page, pageSize, filter, sort);
     const { transactions, totalTransactions } = historyData;
     
     Logger.log("DEBUG: Found " + totalTransactions + " total transactions, page has " + (transactions ? transactions.length : 0) + " transactions");
@@ -3989,7 +4067,7 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     Logger.log("DEBUG: About to process transactions");
     
     try {
-      const totalPages = Math.ceil(totalTransactions / pageSize);
+  const totalPages = Math.ceil(totalTransactions / pageSize);
       
       // Build message with pagination info
       let message = `📋 <b>Lịch sử giao dịch (Trang ${page}/${totalPages})</b>\n`;
@@ -4094,14 +4172,14 @@ function processTransactionHistoryWithPagination(context, page = 1) {
       
       Logger.log("DEBUG: Built complete message, about to send");
       
-      // Attach pagination keyboard if multiple pages
-      const keyboard = createPaginationKeyboard(page, totalPages, "history_page");
+  // Attach history control keyboard (filters, sort, pagination)
+  const keyboard = createHistoryKeyboard(page, totalPages, filter, sort);
       
       // Edit the loading message if available; otherwise send a new one
       if (context.messageId) {
-        editText(targetChatId, context.messageId, message, keyboard);
+  editText(targetChatId, context.messageId, message, keyboard);
       } else {
-        sendText(targetChatId, message, keyboard);
+  sendText(targetChatId, message, keyboard);
       }
       
       Logger.log("DEBUG: Message sent successfully");
