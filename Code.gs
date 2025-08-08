@@ -51,6 +51,26 @@ const TRANSACTION_TYPE = {
   INCOME: 'ThuNhap'
 };
 
+// Normalize type strings to a comparable form (handles accents/spacing)
+function normalizeTypeString(s) {
+  try {
+    return (s || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  } catch (e) {
+    return (s || '').toString().toLowerCase();
+  }
+}
+
+function isTypeMatch(cellValue, targetType) {
+  const a = normalizeTypeString(cellValue);
+  const b = normalizeTypeString(targetType);
+  return a === b;
+}
+
 const CALLBACK_PREFIX = {
   EDIT_TRANSACTION: 'edit_transaction_',
   EDIT_ALLOCATION: 'edit_allocation_',
@@ -280,36 +300,13 @@ function getNextSequenceNumber(userId, date) {
     if (dateData[i][0]) { // Kiểm tra cột Date
       const rowDate = new Date(dateData[i][0]);
       const rowDateStr = formatDate(rowDate);
-      
       if (rowDateStr === targetDateStr) {
         count++;
       }
     }
   }
-  
-  return count + 1; // Trả về số thứ tự tiếp theo
-}
-
-function addTransactionData(entityId, date, description, amount, allocation, type, subCategory, chatType = 'private', senderName = null) {
-  const sheet = getSheet(entityId, chatType, senderName);
-  subCategory = subCategory || ""; // Mặc định rỗng nếu không có
-  
-  // Tính số thứ tự trong ngày
-  var sequenceNumber = getNextSequenceNumber(entityId, date);
-  
-  const rowData = [sequenceNumber, date, description, amount, allocation, type, subCategory];
-
-  if (chatType === 'group' || chatType === 'supergroup') {
-    rowData.unshift(senderName || 'Unknown'); // Add senderName at the beginning for group transactions
-  }
-
-  sheet.appendRow(rowData);
-  
-  // Check for budget alerts after adding transaction
-  checkAndSendBudgetAlerts(entityId, allocation, subCategory, amount, type);
-  
-  // Trả về sequence number để hiển thị trong telegram
-  return sequenceNumber;
+  // Số thứ tự kế tiếp trong ngày
+  return count + 1;
 }
 
 
@@ -363,9 +360,23 @@ function editText(chatId, messageId, text, keyBoard) {
   }
   
   try {
-    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
-    Logger.log("DEBUG: Message edited successfully");
-    return true;
+    var response = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
+    var result = null;
+    try {
+      result = JSON.parse(response.getContentText());
+    } catch (parseErr) {
+      Logger.log("DEBUG: Failed to parse edit response: " + parseErr.toString());
+    }
+
+    if (result && result.ok) {
+      Logger.log("DEBUG: Message edited successfully");
+      return true;
+    } else {
+      Logger.log("DEBUG: Edit failed, response: " + (response ? response.getContentText() : 'no response'));
+      // Fallback: gửi tin nhắn mới nếu không edit được (ví dụ khi chat_id/message_id không khớp)
+      sendText(chatId, text, keyBoard);
+      return false;
+    }
   } catch (error) {
     Logger.log("DEBUG: Failed to edit message: " + error.toString());
     Logger.log("DEBUG: Edit data: " + JSON.stringify(data));
@@ -484,17 +495,43 @@ function addExpenseData(userId, date, item, amount, allocation, subCategory) {
   return sequenceNumber;
 }
 
+/**
+ * Unified add function for both quick /chi and /thu flows and AI imports
+ * Handles private (7 cols) and group (8 cols with username) formats.
+ * @param {number|string} ownerId - User ID (private) or Chat ID (group) that owns the sheet
+ * @param {Date|string|number} date - Transaction date
+ * @param {string} description - Description/content
+ * @param {number} amount - Amount (positive number)
+ * @param {string} allocation - Allocation name
+ * @param {string} type - TRANSACTION_TYPE.INCOME | TRANSACTION_TYPE.EXPENSE or 'ThuNhap'|'ChiTieu'
+ * @param {string} subCategory - Optional subcategory label
+ * @param {string} chatType - 'private' | 'group' | 'supergroup'
+ * @param {string} senderName - User name for group rows
+ * @returns {number} sequenceNumber - Per-day sequence index
+ */
+function addTransactionData(ownerId, date, description, amount, allocation, type, subCategory, chatType, senderName) {
+  const sheet = getSheet(ownerId);
+  const jsDate = (date instanceof Date) ? date : new Date(date);
+  const seq = getNextSequenceNumber(ownerId, jsDate);
+  const safeSub = subCategory || "";
+  const row = (chatType === 'group' || chatType === 'supergroup')
+    ? [seq, jsDate, senderName || '', description, amount, allocation, type, safeSub]
+    : [seq, jsDate, description, amount, allocation, type, safeSub];
+  sheet.appendRow(row);
+  return seq;
+}
+
 function getTotalIncome(userId) {
-  return getTotalAmountByType(userId, "Thu nhập");
+  return getTotalAmountByType(userId, TRANSACTION_TYPE.INCOME);
 }
 
 function getTotalExpenses(userId) {
-  return getTotalAmountByType(userId, "Chi tiêu");
+  return getTotalAmountByType(userId, TRANSACTION_TYPE.EXPENSE);
 }
 
 function getCurrentBalance(userId) {
-  var totalIncome = getTotalAmountByType(userId, "Thu nhập");
-  var totalExpenses = getTotalAmountByType(userId, "Chi tiêu");
+  var totalIncome = getTotalAmountByType(userId, TRANSACTION_TYPE.INCOME);
+  var totalExpenses = getTotalAmountByType(userId, TRANSACTION_TYPE.EXPENSE);
   return totalIncome - totalExpenses;
 }
 
@@ -527,9 +564,9 @@ function getTotalAllocationBalances(userId) {
     var type = row[typeColumnIndex];
     
     if (allocations.includes(allocation)) {
-      if (type === "Thu nhập") {
+  if (isTypeMatch(type, TRANSACTION_TYPE.INCOME)) {
         balances[allocation] += amount;
-      } else if (type === "Chi tiêu") {
+  } else if (isTypeMatch(type, TRANSACTION_TYPE.EXPENSE)) {
         balances[allocation] -= amount;
       }
     }
@@ -2200,7 +2237,8 @@ function sendCommandsList(chatId) {
     "❓ <code>/help</code> - Hiển thị hướng dẫn này\n\n" +
     
     "💡 <b>LƯU Ý:</b>\n" +
-    "• Sau khi nhập <code>/chi</code> hoặc <code>/thu</code>, bạn sẽ chọn hũ và nhãn chi tiết\n" +
+  "• Với <code>/chi</code>: sau khi nhập, bạn sẽ chọn hũ và nhãn chi tiết\n" +
+  "• Với <code>/thu</code>: ghi nhận ngay vào Quỹ, không cần chọn hũ/nhãn\n" +
     "• Bạn vẫn có thể dùng cách cũ: <code>mô tả - số tiền</code> (chi tiêu) hoặc <code>mô tả + số tiền</code> (thu nhập)\n" +
     "• Gõ <code>/</code> để xem menu lệnh nhanh";
     
@@ -2318,30 +2356,54 @@ function handleQuickIncome(chatId, userId, input, userName) {
       return;
     }
     
-    // Sử dụng default allocation (có thể nâng cấp thành smart allocation sau)
-    var allocation = "Chi tiêu thiết yếu";
+    // Ghi nhận ngay vào Quỹ: không cần hũ và nhãn
+    var today = new Date();
+    // Suy luận loại chat từ chatId: Telegram group/supergroup thường có chatId âm
+    var isGroupChat = (String(chatId).startsWith("-"));
+    var chatType = isGroupChat ? 'group' : 'private';
+    var ownerId = isGroupChat ? chatId : userId;
     
-    // Lưu temp transaction để chọn subcategory
-    var tempTransaction = {
+    // Lưu giao dịch với allocation và subCategory rỗng
+    var sequenceNumber = addTransactionData(
+      ownerId,
+      today,
+      description,
+      amount,
+      '',
+      TRANSACTION_TYPE ? TRANSACTION_TYPE.INCOME : 'ThuNhap',
+      '',
+      chatType,
+      userName
+    );
+    
+    // Lưu thông tin để có thể chỉnh sửa sau nếu cần
+    var transactionId = 'tx_' + Date.now();
+    var transactionInfo = {
       userId: userId,
-      date: new Date().toISOString().split('T')[0],
+      transactionId: transactionId,
+      date: today,
       description: description,
       amount: amount,
-      allocation: allocation,
-      type: "ThuNhap"
+      allocation: '',
+      type: TRANSACTION_TYPE ? TRANSACTION_TYPE.INCOME : 'ThuNhap',
+      subCategory: '',
+      sequenceNumber: sequenceNumber,
+      rowIndex: getLastRowIndex(ownerId)
     };
+    saveTransactionForEdit(userId, transactionInfo, transactionId);
     
-    saveTempTransaction(userId, tempTransaction);
+  // Thông báo thành công (hiển thị rõ ràng)
+  var success = "✅ Đã ghi nhận thu nhập vào Quỹ\n" +
+          "💬 Nội dung: " + description + "\n" +
+          "💵 Số tiền: " + formatNumberWithSeparator(amount) + "\n" +
+          "📅 Ngày: " + formatDateDDMMYYYYSafe(today);
+    // Thêm tên người gửi cho group
+    if (isGroupChat && userName) {
+      success = "👤 " + userName + "\n" + success;
+    }
     
-    // Hiển thị keyboard chọn nhãn con với allocationIndex
-    var allocationIndex = allocations.indexOf(allocation);
-    var keyboard = createSubCategoryKeyboard(allocation, false, null, allocationIndex);
-    
-    sendText(chatId,
-      "⚡ Thu nhập nhanh: " + description + " " + formatNumberWithSeparator(amount) + 
-      " vào hũ " + allocation + "\nVui lòng chọn nhãn cụ thể:",
-      keyboard
-    );
+    var editKb = createEditKeyboard(transactionId);
+    sendText(chatId, success, editKb);
     
   } catch (error) {
     Logger.log("Error in handleQuickIncome: " + error.toString());
@@ -2466,7 +2528,7 @@ function getTotalAmountByType(userId, type) {
   let total = 0;
   for (let i = 2; i < allData.length; i++) { // Bắt đầu từ row 3 (index 2)
     const row = allData[i];
-    if (row[typeColumnIndex] === type) {
+    if (isTypeMatch(row[typeColumnIndex], type)) {
       const amount = parseFloat(row[amountColumnIndex]) || 0;
       total += amount;
       Logger.log("DEBUG: Found " + type + " transaction: " + amount);
@@ -3248,6 +3310,18 @@ function handleCallbackQuery(callbackQuery) {
     chatType: callbackQuery.chatType // Add chatType to context
   };
   
+  // Ack the callback to stop Telegram's loading spinner
+  try {
+    UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/answerCallbackQuery', {
+      method: 'post',
+      payload: {
+        callback_query_id: callbackQuery.id
+      }
+    });
+  } catch (ackErr) {
+    Logger.log('WARN: answerCallbackQuery failed: ' + ackErr.toString());
+  }
+
   Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType + " group: " + context.groupChatId);
 
   // Route to specific handlers based on callback data
@@ -3296,10 +3370,10 @@ function handleCallbackQuery(callbackQuery) {
   } else if (context.data === 'chart_subcategory') {
     sendSubCategoryChart(context.chatId, null, context.messageId);
   } else if (context.data === 'history') {
-    processTransactionHistoryWithPagination(context, 1); // Default to page 1
+  processTransactionHistoryWithPagination(context, 1); // Default to page 1
   } else if (context.data.startsWith('history_page_')) {
     const page = parseInt(context.data.replace('history_page_', ''));
-    processTransactionHistoryWithPagination(context, page);
+  processTransactionHistoryWithPagination(context, page);
   } else if (context.data === 'view_subcategory_summary') {
     sendTotalSubCategorySummary(context.chatId, null, context.messageId);
   } else if (context.data === 'view_by_subcategory') {
@@ -3351,6 +3425,11 @@ function isCommand(text, command) {
   if (!text || !command) return false;
   const cleanText = text.trim().toLowerCase();
   const cleanCommand = command.toLowerCase();
+  
+  // Special debug for lichsu command
+  if (command === '/lichsu') {
+    Logger.log("DEBUG: isCommand LICHSU - text: '" + cleanText + "', command: '" + cleanCommand + "'");
+  }
   
   Logger.log("DEBUG: isCommand - text: '" + cleanText + "', command: '" + cleanCommand + "'");
   
@@ -3437,17 +3516,17 @@ function handleMessage(message) {
   } else if (isCommand(context.text, '/xemhu')) {
     sendLoadingMessage(context.chatId, "tính toán số dư các hũ");
     sendTotalPhanboSummary(context);
-  } else if (context.text === '/xemnhan') {
+  } else if (isCommand(context.text, '/xemnhan')) {
     sendLoadingMessage(context.chatId, "tính toán chi tiêu theo nhãn");
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     sendTotalSubCategorySummary(context.chatId, entityId);
-  } else if (context.text === '/tile' || context.text === '/tylе') {
+  } else if (isCommand(context.text, '/tile') || isCommand(context.text, '/tylе')) {
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     sendPercentageSelectionMenu(context.chatId, entityId);
-  } else if (context.text === '/biеudo' || context.text === '/chart') {
+  } else if (isCommand(context.text, '/biеudo') || isCommand(context.text, '/chart')) {
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     sendChartSelectionMenu(context.chatId, entityId);
-  } else if (context.text === '/lichsu') {
+  } else if (isCommand(context.text, '/lichsu')) {
     processTransactionHistoryCommand(context);
   } else if (context.text.startsWith('/chi ')) {
     processQuickExpenseCommand(context);
@@ -3472,9 +3551,9 @@ function handleMessage(message) {
   } else if (context.text.startsWith("/history")) {
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     processHistoryCommand(entityId, context.text);
-  } else if (context.text === '/export') {
+  } else if (isCommand(context.text, '/export')) {
     processExportCommand(context);
-  } else if (context.text === '/budget' || context.text === '/ngansach') {
+  } else if (isCommand(context.text, '/budget') || isCommand(context.text, '/ngansach')) {
     processBudgetCommand(context);
   } else if (context.text.includes(" + ") || context.text.includes(" - ")) {
     processTransactionText(context);
@@ -3561,27 +3640,42 @@ function createPaginationKeyboard(currentPage, totalPages, commandPrefix = "page
  */
 function getTransactionHistoryPage(userId, page, pageSize) {
   try {
+    Logger.log("DEBUG: getTransactionHistoryPage called for userId: " + userId + ", page: " + page + ", pageSize: " + pageSize);
+
     const sheet = getSheet(userId);
     const lastRow = sheet.getLastRow();
-    const totalTransactions = lastRow > 1 ? lastRow - 1 : 0;
-    
-    if (totalTransactions === 0) {
+    const lastCol = sheet.getLastColumn();
+    Logger.log("DEBUG: Sheet lastRow: " + lastRow + ", lastCol: " + lastCol);
+
+    // Data starts from row 3 (row 1 = title, row 2 = header)
+    const firstDataRow = 3;
+    const dataRowCount = lastRow - (firstDataRow - 1);
+    if (dataRowCount <= 0) {
+      Logger.log("DEBUG: No transactions found (no data rows)");
       return { transactions: [], totalTransactions: 0 };
     }
 
+    const totalTransactions = dataRowCount; // each data row is one transaction
+
     // Calculate range for current page
     const startIndex = (page - 1) * pageSize;
-    
-    // Get ALL data first for sorting (still need to sort by date)
-    // Note: This is a trade-off - we need sorting but want to limit data fetching
-    const allData = sheet.getRange("A2:G" + lastRow).getValues();
-    
-    // Sort by date (column 1, index 1) - newest first
-    allData.sort((a, b) => new Date(b[1]) - new Date(a[1]));
-    
-    // Now get the page slice
+    Logger.log("DEBUG: startIndex: " + startIndex);
+
+    // Get ALL data rows first for sorting (handle both private 7 cols and group 8 cols)
+    const allData = sheet.getRange(firstDataRow, 1, dataRowCount, lastCol).getValues();
+    Logger.log("DEBUG: Retrieved " + allData.length + " data rows of " + lastCol + " columns");
+
+    // Sort by date (column B, index 1) - newest first (guard invalid dates)
+    allData.sort((a, b) => {
+      const da = new Date(a[1]);
+      const db = new Date(b[1]);
+      return db - da;
+    });
+
+    // Page slice
     const endIndex = Math.min(startIndex + pageSize, totalTransactions);
     const pageTransactions = allData.slice(startIndex, endIndex);
+    Logger.log("DEBUG: Returning " + pageTransactions.length + " transactions for page " + page);
 
     return { 
       transactions: pageTransactions, 
@@ -3595,6 +3689,22 @@ function getTransactionHistoryPage(userId, page, pageSize) {
 }
 
 // =================== TRANSACTION PARSER ===================
+
+// Safe date formatter: returns DD/MM/YYYY with zero-padding; handles Date|string|number; avoids 31/12/1899
+function formatDateDDMMYYYYSafe(value) {
+  try {
+    let d = value instanceof Date ? value : new Date(value);
+    if (!(d instanceof Date) || isNaN(d.getTime())) return 'N/A';
+    // Guard against bogus epoch-like values
+    const year = d.getFullYear();
+    if (year < 1970) return 'N/A';
+    const day = ('0' + d.getDate()).slice(-2);
+    const month = ('0' + (d.getMonth() + 1)).slice(-2);
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return 'N/A';
+  }
+}
 
 /**
  * ENHANCED PARSER: Phân tích cú pháp với smart suggestions
@@ -3840,19 +3950,25 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null, c
  */
 function processTransactionHistoryWithPagination(context, page = 1) {
   try {
+    Logger.log("DEBUG: processTransactionHistoryWithPagination called for chatId: " + context.chatId + ", page: " + page);
+    const targetChatId = context.groupChatId || context.chatId;
+    
     // Show loading message immediately
     if (context.messageId) {
-      editText(context.chatId, context.messageId, "⏳ Đang tải lịch sử giao dịch...", null);
+      editText(targetChatId, context.messageId, "⏳ Đang tải lịch sử giao dịch...", null);
     }
     
     const pageSize = 10; // 10 transactions per page
     
     // For group chat, use group ID to get transactions
-    const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
+  const entityId = context.groupChatId || context.chatId;
+    Logger.log("DEBUG: entityId: " + entityId + ", chatType: " + context.chatType);
     
     // ✨ OPTIMIZED: Get only the page we need from database
     const historyData = getTransactionHistoryPage(entityId, page, pageSize);
     const { transactions, totalTransactions } = historyData;
+    
+    Logger.log("DEBUG: Found " + totalTransactions + " total transactions, page has " + (transactions ? transactions.length : 0) + " transactions");
     
     if (!transactions || transactions.length === 0) {
       const message = totalTransactions === 0 ? 
@@ -3863,63 +3979,116 @@ function processTransactionHistoryWithPagination(context, page = 1) {
         `📭 <b>Trang ${page} không có dữ liệu!</b>\n\nVui lòng chọn trang khác.`;
       
       if (context.messageId) {
-        editText(context.chatId, context.messageId, message, null);
+        editText(targetChatId, context.messageId, message, null);
       } else {
-        sendText(context.chatId, message);
+        sendText(targetChatId, message);
       }
       return;
     }
     
-    const totalPages = Math.ceil(totalTransactions / pageSize);
+    Logger.log("DEBUG: About to process transactions");
     
-    // Build message with pagination info
-    let message = `📋 <b>Lịch sử giao dịch (Trang ${page}/${totalPages})</b>\n`;
-    message += `📊 Tổng: ${totalTransactions} giao dịch\n\n`;
-    
-    // Calculate totals for this page
-    let pageThuNhap = 0;
-    let pageChiTieu = 0;
-    
-    transactions.forEach((transaction, index) => {
-      const sequenceNumber = transaction[0];
-      const date = formatDate(transaction[1]);
-      const description = transaction[2];
-      const amount = transaction[3];
-      const allocation = transaction[4];
-      const type = transaction[5];
-      const subCategory = transaction[6] || '';
+    try {
+      const totalPages = Math.ceil(totalTransactions / pageSize);
       
-      const emoji = type === TRANSACTION_TYPE.INCOME ? '💰' : '💸';
-      const formattedAmount = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      // Build message with pagination info
+      let message = `📋 <b>Lịch sử giao dịch (Trang ${page}/${totalPages})</b>\n`;
+      message += `📊 Tổng: ${totalTransactions} giao dịch\n\n`;
       
-      message += `${emoji} <b>#${sequenceNumber}</b> - ${description}\n`;
-      message += `💵 ${formattedAmount} | 🏺 ${allocation}`;
-      if (subCategory) {
-        message += ` | 🏷️ ${subCategory}`;
-      }
-      message += `\n📅 ${date}\n\n`;
+      Logger.log("DEBUG: Built header message");
       
-      if (type === TRANSACTION_TYPE.INCOME) {
-        pageThuNhap += amount;
+      // Calculate totals for this page
+      let pageThuNhap = 0;
+      let pageChiTieu = 0;
+      
+      Logger.log("DEBUG: About to process " + transactions.length + " transactions");
+      
+  transactions.forEach((transaction, index) => {
+        Logger.log("DEBUG: Processing transaction " + index + ": " + JSON.stringify(transaction));
+        
+        // Detect structure by inspecting numeric columns instead of raw length
+        // Private: [seq, date, description, amount, allocation, type, subCategory] -> amount at index 3
+        // Group:   [seq, date, userName, description, amount, allocation, type, subCategory] -> amount at index 4
+        const looksLikePrivate = transaction && isFinite(parseFloat(transaction[3]));
+        const looksLikeGroup = transaction && transaction.length >= 7 && isFinite(parseFloat(transaction[4])) && !looksLikePrivate;
+        const isGroupChat = !!looksLikeGroup;
+
+        let sequenceNumber, dateValue, userName, description, amount, allocation, type, subCategory;
+        if (isGroupChat) {
+          sequenceNumber = transaction[0] ?? 'N/A';
+          dateValue      = transaction[1] ?? null;
+          userName       = transaction[2] ?? '';
+          description    = transaction[3] ?? 'N/A';
+          amount         = parseFloat(transaction[4]) || 0;
+          allocation     = transaction[5] ?? 'N/A';
+          type           = transaction[6] ?? 'N/A';
+          subCategory    = transaction[7] ?? '';
+        } else {
+          sequenceNumber = transaction[0] ?? 'N/A';
+          dateValue      = transaction[1] ?? null;
+          userName       = '';
+          description    = transaction[2] ?? 'N/A';
+          amount         = parseFloat(transaction[3]) || 0;
+          allocation     = transaction[4] ?? 'N/A';
+          type           = transaction[5] ?? 'N/A';
+          subCategory    = transaction[6] ?? '';
+        }
+        
+        Logger.log("DEBUG: Parsed - seq:" + sequenceNumber + ", amount:" + amount + ", type:" + type + ", isGroup:" + isGroupChat);
+        
+  // Safe date formatting (DD/MM/YYYY)
+  const formattedDate = formatDateDDMMYYYYSafe(dateValue);
+        
+  const isIncome = (type === TRANSACTION_TYPE.INCOME);
+  const emoji = isIncome ? '💰' : '💸';
+  const typeLabel = isIncome ? 'Thu' : 'Chi';
+  const formattedAmount = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        
+  // Build multi-line, numbered entry per spec
+  const contributorPrefix = (isGroupChat && userName) ? `👤 #${userName} - ` : '';
+  const details = [
+    `${contributorPrefix}${description}`,
+    `💵 ${formattedAmount}`
+  ];
+  if (allocation) details.push(`🏺 ${allocation}`);
+  if (subCategory) details.push(`🏷️ ${subCategory}`);
+
+  message += `${sequenceNumber}. ${emoji} ${typeLabel}\n` +
+             `${details.join(" | ")}\n` +
+             `📅 ${formattedDate}\n\n`;
+        
+        if (type === TRANSACTION_TYPE.INCOME) {
+          pageThuNhap += amount;
+        } else {
+          pageChiTieu += amount;
+        }
+      });
+      
+      Logger.log("DEBUG: Finished processing transactions");
+      
+  // Add page summary
+      message += `📈 <b>Trang ${page} - Tóm tắt:</b>\n`;
+      message += `💰 Thu nhập: ${pageThuNhap.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
+      message += `💸 Chi tiêu: ${pageChiTieu.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
+      message += `💹 Chênh lệch: ${(pageThuNhap - pageChiTieu).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+      
+      Logger.log("DEBUG: Built complete message, about to send");
+      
+      // Attach pagination keyboard if multiple pages
+      const keyboard = createPaginationKeyboard(page, totalPages, "history_page");
+      
+      // Edit the loading message if available; otherwise send a new one
+      if (context.messageId) {
+        editText(targetChatId, context.messageId, message, keyboard);
       } else {
-        pageChiTieu += amount;
+        sendText(targetChatId, message, keyboard);
       }
-    });
-    
-    // Add page summary
-    message += `📈 <b>Trang ${page} - Tóm tắt:</b>\n`;
-    message += `💰 Thu nhập: ${pageThuNhap.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
-    message += `💸 Chi tiêu: ${pageChiTieu.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}\n`;
-    message += `💹 Chênh lệch: ${(pageThuNhap - pageChiTieu).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-    
-    // Create pagination keyboard
-    const keyboard = createPaginationKeyboard(page, totalPages, 'history_page');
-    
-    // Send or edit message
-    if (context.messageId) {
-      editText(context.chatId, context.messageId, message, keyboard);
-    } else {
-      sendText(context.chatId, message, keyboard);
+      
+      Logger.log("DEBUG: Message sent successfully");
+      
+    } catch (processingError) {
+      Logger.log("DEBUG: Error in transaction processing: " + processingError.toString());
+      sendText(context.chatId, "❌ Lỗi khi xử lý dữ liệu giao dịch: " + processingError.toString());
     }
     
   } catch (err) {
@@ -3927,9 +4096,9 @@ function processTransactionHistoryWithPagination(context, page = 1) {
     const errorMessage = "❌ Đã có lỗi xảy ra khi tải lịch sử giao dịch. Vui lòng thử lại sau.";
     
     if (context.messageId) {
-      editText(context.chatId, context.messageId, errorMessage, null);
+  editText(targetChatId, context.messageId, errorMessage, null);
     } else {
-      sendText(context.chatId, errorMessage);
+  sendText(targetChatId, errorMessage);
     }
   }
 }
@@ -4050,6 +4219,136 @@ function processSubcategorySelection(context) {
   }
 }
 
+// =================== QUICK FLOW NAVIGATION (NEW) ===================
+// Go back to allocation selection from subcategory step
+function processBackToAllocation(context) {
+  try {
+    const targetChatId = context.groupChatId || context.chatId;
+    const temp = getTempTransaction(context.chatId);
+    if (!temp) {
+      editText(targetChatId, context.messageId, "❌ Không tìm thấy giao dịch tạm. Vui lòng nhập lại /chi hoặc /thu.", null);
+      return;
+    }
+
+    const allocationKeyboard = createAllocationKeyboard(null); // new flow keyboard: allocation_*
+    const typeText = temp.type === TRANSACTION_TYPE.INCOME ? 'Thu nhập' : 'Chi tiêu';
+    const amountFmt = temp.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    let message = `⚙️ Chọn lại hũ cho giao dịch\n<b>${typeText} nhanh:</b> ${temp.description} <code>${amountFmt}</code>`;
+    if (context.chatType === 'group' || context.chatType === 'supergroup') {
+      message = `👤 ${context.userName}\n` + message;
+    }
+
+    editText(targetChatId, context.messageId, message, allocationKeyboard);
+  } catch (err) {
+    Logger.log("Error in processBackToAllocation: " + err.toString());
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, "❌ Đã có lỗi xảy ra khi quay lại chọn hũ.", null);
+  }
+}
+
+// Handle allocation selection for new quick transaction (allocation_<index>)
+function processAllocationSelection(context) {
+  try {
+    const targetChatId = context.groupChatId || context.chatId;
+    const data = context.data;
+    // Expect format: allocation_<index>
+    const parts = data.split('_');
+    const idxStr = parts[1];
+    const index = parseInt(idxStr, 10);
+    if (isNaN(index) || index < 0 || index >= allocations.length) {
+      editText(targetChatId, context.messageId, "❌ Hũ không hợp lệ. Vui lòng thử lại.", null);
+      return;
+    }
+
+    const selectedAllocation = allocations[index];
+    const temp = getTempTransaction(context.chatId);
+    if (!temp) {
+      editText(targetChatId, context.messageId, "❌ Không tìm thấy giao dịch tạm. Vui lòng nhập lại /chi hoặc /thu.", null);
+      return;
+    }
+
+    // Update allocation in temp transaction
+    temp.allocation = selectedAllocation;
+    saveTempTransaction(context.chatId, temp);
+
+    // Show subcategory keyboard for selected allocation
+    const keyboard = createSubCategoryKeyboard(selectedAllocation, false, null, index);
+    const typeText = temp.type === TRANSACTION_TYPE.INCOME ? 'Thu nhập' : 'Chi tiêu';
+    const amountFmt = temp.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    let message = `⚡ <b>${typeText} nhanh:</b> ${temp.description} <code>${amountFmt}</code> vào hũ <b>${selectedAllocation}</b>.\n\n🏷️ Vui lòng chọn nhãn cụ thể:`;
+    if (context.chatType === 'group' || context.chatType === 'supergroup') {
+      message = `👤 ${context.userName}\n` + message;
+    }
+
+    editText(targetChatId, context.messageId, message, keyboard);
+  } catch (err) {
+    Logger.log("Error in processAllocationSelection: " + err.toString());
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, "❌ Đã có lỗi xảy ra khi chọn hũ. Vui lòng thử lại.", null);
+  }
+}
+
+// Cancel the current quick transaction
+function processCancelNew(context) {
+  try {
+    const targetChatId = context.groupChatId || context.chatId;
+    clearTempTransaction(context.chatId);
+    editText(targetChatId, context.messageId, '❌ Đã hủy giao dịch.', null);
+  } catch (err) {
+    Logger.log("Error in processCancelNew: " + err.toString());
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, '❌ Không thể hủy giao dịch lúc này.', null);
+  }
+}
+
+// Cancel editing an existing transaction (revert UI, keep cache so user can edit later)
+function processCancelEdit(context) {
+  try {
+    const targetChatId = context.groupChatId || context.chatId;
+    let transactionId = null;
+    if (context.data && context.data.startsWith(CALLBACK_PREFIX.CANCEL_EDIT)) {
+      transactionId = context.data.replace(CALLBACK_PREFIX.CANCEL_EDIT, '');
+    }
+
+    // Try to restore the original confirmation message from cached transaction info
+    let restoredMessage = '❌ Đã hủy chỉnh sửa.';
+    let keyboard = transactionId ? createEditKeyboard(transactionId) : null;
+
+    if (transactionId) {
+      const tx = getTransactionForEdit(context.chatId, transactionId);
+      if (tx) {
+        const isIncome = isTypeMatch(tx.type, TRANSACTION_TYPE.INCOME);
+        if (isIncome) {
+          // Rebuild the income success message (to Fund, no jar/tag)
+          const dateStr = formatDateDDMMYYYYSafe(tx.date);
+          restoredMessage =
+            '✅ Đã ghi nhận thu nhập vào Quỹ\n' +
+            '💬 Nội dung: ' + tx.description + '\n' +
+            '💵 Số tiền: ' + formatNumberWithSeparator(tx.amount) + '\n' +
+            '📅 Ngày: ' + dateStr;
+        } else {
+          // Rebuild the expense success message
+          const amountStr = formatNumberWithSeparator(tx.amount);
+          const labelPart = tx.subCategory ? (' với nhãn ' + tx.subCategory) : '';
+          restoredMessage =
+            '✅ Giao dịch #' + (tx.sequenceNumber || '') + ' - Đã ghi nhận chi tiêu: ' +
+            tx.description + ' ' + amountStr + ' vào hũ ' + (tx.allocation || '') + labelPart;
+        }
+        // Prefix contributor for groups
+        if (context.chatType === 'group' || context.chatType === 'supergroup') {
+          restoredMessage = '👤 ' + context.userName + '\n' + restoredMessage;
+        }
+      }
+    }
+
+    editText(targetChatId, context.messageId, restoredMessage, keyboard);
+  } catch (err) {
+    Logger.log("Error in processCancelEdit: " + err.toString());
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, '❌ Không thể hủy chỉnh sửa lúc này.', null);
+  }
+}
+
 function processEditTransaction(context) {
   try {
     Logger.log("DEBUG: edit_transaction callback received for user: " + context.chatId);
@@ -4063,7 +4362,8 @@ function processEditTransaction(context) {
       const allocationKeyboard = createAllocationKeyboard(transactionInfo.transactionId);
       Logger.log("DEBUG: Allocation keyboard created with " + allocationKeyboard.inline_keyboard.length + " rows");
       
-      editText(context.chatId, context.messageId,
+      const targetChatId = context.groupChatId || context.chatId;
+      editText(targetChatId, context.messageId,
         "🔄 Chỉnh sửa giao dịch: " + transactionInfo.description + 
         " " + transactionInfo.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + 
         "\n\nVui lòng chọn hũ mới:",
@@ -4072,11 +4372,13 @@ function processEditTransaction(context) {
       Logger.log("DEBUG: Edit message sent");
     } else {
       Logger.log("DEBUG: No transaction info found in cache");
-      editText(context.chatId, context.messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
+      const targetChatId = context.groupChatId || context.chatId;
+      editText(targetChatId, context.messageId, "❌ Không tìm thấy thông tin giao dịch để chỉnh sửa. Vui lòng thử lại.", null);
     }
   } catch (err) {
     Logger.log("Error in processEditTransaction: " + err.toString());
-    editText(context.chatId, context.messageId, "❌ Rất tiếc, đã có lỗi xảy ra khi cố gắng chỉnh sửa giao dịch. Vui lòng thử lại sau.", null);
+    const targetChatId = context.groupChatId || context.chatId;
+    editText(targetChatId, context.messageId, "❌ Rất tiếc, đã có lỗi xảy ra khi cố gắng chỉnh sửa giao dịch. Vui lòng thử lại sau.", null);
   }
 }
 
@@ -4314,12 +4616,51 @@ function processQuickIncomeCommand(context) {
     const parseResult = parseTransactionText(input, TRANSACTION_TYPE.INCOME);
     
     if (parseResult.success) {
-      // For group chat, we need both chat ID (group) and user ID (sender)
-      const userId = context.userId; // Always use actual user ID
-      const chatId = context.chatId;  // Always use chat ID for sending messages
-      
-      // Pass all needed parameters to initiateTransactionProcess
-      initiateTransactionProcess(chatId, parseResult, null, context.chatType, context.userName, userId);
+      // Save directly into Fund (no jar/label)
+      const ownerId = context.chatId; // Use chatId consistently as sheet owner
+      const chatType = context.chatType;
+      const senderName = context.userName;
+      const now = new Date();
+
+      const sequenceNumber = addTransactionData(
+        ownerId,
+        now,
+        parseResult.description,
+        parseResult.amount,
+        '',
+        TRANSACTION_TYPE.INCOME,
+        '',
+        chatType,
+        senderName
+      );
+
+      // Cache for potential edits
+      const transactionId = 'tx_' + Date.now();
+      const transactionInfo = {
+        userId: context.userId,
+        transactionId,
+        date: now,
+        description: parseResult.description,
+        amount: parseResult.amount,
+        allocation: '',
+        type: TRANSACTION_TYPE.INCOME,
+        subCategory: '',
+        sequenceNumber,
+        rowIndex: getLastRowIndex(ownerId)
+      };
+      saveTransactionForEdit(context.userId, transactionInfo, transactionId);
+
+      // Notify success with clear, labeled formatting
+      const dateStr = formatDateDDMMYYYYSafe(now);
+      let msg = `✅ Đã ghi nhận thu nhập vào Quỹ\n` +
+                `💬 Nội dung: ${parseResult.description}\n` +
+                `💵 Số tiền: ${formatNumberWithSeparator(parseResult.amount)}\n` +
+                `📅 Ngày: ${dateStr}`;
+      if (chatType === 'group' || chatType === 'supergroup') {
+        msg = `👤 ${senderName}\n` + msg;
+      }
+      const editKb = createEditKeyboard(transactionId);
+      sendText(context.chatId, msg, editKb);
     } else {
       // ✨ SMART SUGGESTION: Send intelligent error message
       sendText(context.chatId, parseResult.suggestion);
@@ -4359,17 +4700,26 @@ function processTransactionText(context) {
  */
 function processTransactionHistoryCommand(context) {
   try {
-    // Create a pseudo message context for pagination that doesn't require messageId initially
+    Logger.log("DEBUG: processTransactionHistoryCommand started");
+    Logger.log("DEBUG: processTransactionHistoryCommand called for chatId: " + context.chatId + ", chatType: " + context.chatType);
+
+    // Send a loading message and then edit it once data is ready
+    const sent = sendText(context.chatId, "⏳ Đang tải lịch sử giao dịch...");
+    const loadingMessageId = sent && sent.message_id ? sent.message_id : null;
+
+    // Build pagination context with messageId for editing
     const paginationContext = {
       chatId: context.chatId,
       userName: context.userName,
       data: 'history',
-      messageId: null, // Will start fresh
-      chatType: context.chatType // Add chatType to pagination context
+      messageId: loadingMessageId,
+      chatType: context.chatType
     };
-    
-    // Call pagination function directly
+
+    Logger.log("DEBUG: About to call processTransactionHistoryWithPagination, messageId=" + loadingMessageId);
     processTransactionHistoryWithPagination(paginationContext, 1);
+    Logger.log("DEBUG: processTransactionHistoryWithPagination completed");
+    
   } catch (err) {
     Logger.log("Error in processTransactionHistoryCommand: " + err.toString());
     sendText(context.chatId, "❌ Đã có lỗi xảy ra khi tải lịch sử. Vui lòng thử lại.");
