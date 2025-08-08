@@ -3996,7 +3996,25 @@ function processTransactionHistoryWithPagination(context, page = 1) {
       message += `📊 Tổng: ${totalTransactions} giao dịch\n\n`;
       
       Logger.log("DEBUG: Built header message");
-      
+
+    // Sort ascending by calendar date (Y-M-D) then sequence number (col 0)
+      try {
+        transactions.sort((a, b) => {
+      const dAraw = a && a[1];
+      const dBraw = b && b[1];
+      const dA = (dAraw instanceof Date) ? dAraw : new Date(dAraw);
+      const dB = (dBraw instanceof Date) ? dBraw : new Date(dBraw);
+      const keyA = (!isNaN(dA.getTime())) ? (dA.getFullYear()*10000 + (dA.getMonth()+1)*100 + dA.getDate()) : 0;
+      const keyB = (!isNaN(dB.getTime())) ? (dB.getFullYear()*10000 + (dB.getMonth()+1)*100 + dB.getDate()) : 0;
+      if (keyA !== keyB) return keyA - keyB;
+          const sA = parseInt(a && a[0], 10) || 0;
+          const sB = parseInt(b && b[0], 10) || 0;
+          return sA - sB;
+        });
+      } catch (sortErr) {
+        Logger.log("WARN: Could not sort transactions: " + sortErr.toString());
+      }
+
       // Calculate totals for this page
       let pageThuNhap = 0;
       let pageChiTieu = 0;
@@ -4043,19 +4061,21 @@ function processTransactionHistoryWithPagination(context, page = 1) {
   const emoji = isIncome ? '💰' : '💸';
   const typeLabel = isIncome ? 'Thu' : 'Chi';
   const formattedAmount = amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-        
-  // Build multi-line, numbered entry per spec
-  const contributorPrefix = (isGroupChat && userName) ? `👤 #${userName} - ` : '';
-  const details = [
-    `${contributorPrefix}${description}`,
-    `💵 ${formattedAmount}`
-  ];
-  if (allocation) details.push(`🏺 ${allocation}`);
-  if (subCategory) details.push(`🏷️ ${subCategory}`);
 
-  message += `${sequenceNumber}. ${emoji} ${typeLabel}\n` +
-             `${details.join(" | ")}\n` +
-             `📅 ${formattedDate}\n\n`;
+  // Ensure allocation/label are always shown; default for income is Quỹ, label —
+  const displayAllocation = (allocation && String(allocation).trim()) ? allocation : (isIncome ? 'Quỹ' : '—');
+  const displaySub = (subCategory && String(subCategory).trim()) ? subCategory : '—';
+
+  // Build 3-line, numbered entry per requested layout (use page-local numbering 1..N)
+  const displayIndex = index + 1;
+  const line1Parts = [`${displayIndex}. ${emoji} ${typeLabel}`, `📅 ${formattedDate}`];
+  if (isGroupChat && userName) line1Parts.push(`👤 #${userName}`);
+  const line1 = line1Parts.join(' | ');
+
+  const line2 = `💵 ${formattedAmount} | 💬 ${description}`;
+  const line3 = `🏺 ${displayAllocation} | 🏷️ ${displaySub}`;
+
+  message += `${line1}\n${line2}\n${line3}\n\n`;
         
         if (type === TRANSACTION_TYPE.INCOME) {
           pageThuNhap += amount;
