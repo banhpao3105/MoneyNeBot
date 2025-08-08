@@ -387,6 +387,59 @@ function editText(chatId, messageId, text, keyBoard) {
 }
 
 /**
+ * Edit message without any fallback sending. Returns true if edited, false otherwise.
+ */
+function editTextSafe(chatId, messageId, text, keyBoard) {
+  var formattedText = formatNumberWithSeparator(text);
+  var data = {
+    method: "post",
+    payload: {
+      method: "editMessageText",
+      chat_id: String(chatId),
+      message_id: String(messageId),
+      text: formattedText,
+      parse_mode: "HTML"
+    }
+  };
+  if (keyBoard) data.payload.reply_markup = JSON.stringify(keyBoard);
+  try {
+    var response = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
+    var result = null;
+    try {
+      result = JSON.parse(response.getContentText());
+    } catch (parseErr) {
+      Logger.log("DEBUG: Failed to parse edit response (safe): " + parseErr.toString());
+    }
+    return !!(result && result.ok);
+  } catch (error) {
+    Logger.log("DEBUG: Failed to edit message (safe): " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Delete a message to avoid leaving stale loaders if edit fails
+ */
+function deleteMessage(chatId, messageId) {
+  try {
+    const data = {
+      method: 'post',
+      payload: {
+        method: 'deleteMessage',
+        chat_id: String(chatId),
+        message_id: String(messageId)
+      }
+    };
+    const response = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/', data);
+    const result = JSON.parse(response.getContentText());
+    return result && result.ok;
+  } catch (e) {
+    Logger.log('WARN: deleteMessage failed: ' + e.toString());
+    return false;
+  }
+}
+
+/**
  * Edit the tapped message to show a short loading state while processing a callback
  */
 function showCallbackLoading(context, text) {
@@ -665,7 +718,12 @@ function sendTotalPhanboSummary(context) {
   };
   
   if (context.messageId) {
-    editText(context.chatId, context.messageId, message, allocationMenu);
+    const edited = editTextSafe(context.chatId, context.messageId, message, allocationMenu);
+    if (!edited) {
+      // Edit failed (e.g., wrong chat/message), delete loader then send new
+      deleteMessage(context.chatId, context.messageId);
+      sendText(context.chatId, message, allocationMenu);
+    }
   } else {
     sendText(context.chatId, message, allocationMenu);
   }
@@ -1896,9 +1954,13 @@ function sendTotalSubCategorySummary(chatId, userId, messageId) {
     ]
   };
   
-  // Sử dụng editText nếu có messageId, ngược lại dùng sendText
+  // Prefer editing the loading message; if it fails, delete loader and send new message
   if (messageId) {
-    editText(chatId, messageId, message, subCategoryMenu);
+    const edited = editTextSafe(chatId, messageId, message, subCategoryMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, subCategoryMenu);
+    }
   } else {
     sendText(chatId, message, subCategoryMenu);
   }
@@ -3367,6 +3429,9 @@ function handleCallbackQuery(callbackQuery) {
 
   Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType + " group: " + context.groupChatId);
 
+  // Always prefer editing in the same chat where the button was tapped
+  const targetChatId = context.groupChatId || context.chatId;
+
   // Immediately show a lightweight loading state on the tapped message
   try {
     if (shouldShowLoadingForCallback(context.data)) {
@@ -3406,21 +3471,21 @@ function handleCallbackQuery(callbackQuery) {
   } else if (context.data === 'getTotalAllocationBalances') {
     processShowAllocationBalances(context);
   } else if (context.data === 'show_percentage_menu') {
-    sendPercentageSelectionMenu(context.chatId, null, context.messageId);
+    sendPercentageSelectionMenu(targetChatId, null, context.messageId);
   } else if (context.data === 'show_chart_menu') {
-    sendChartSelectionMenu(context.chatId, null, context.messageId);
+    sendChartSelectionMenu(targetChatId, null, context.messageId);
   } else if (context.data === 'percentage_allocation_expense') {
-    sendAllocationPercentages(context.chatId, null, context.messageId);
+    sendAllocationPercentages(targetChatId, null, context.messageId);
   } else if (context.data === 'percentage_allocation_income') {
-    sendIncomePercentages(context.chatId, null, context.messageId);
+    sendIncomePercentages(targetChatId, null, context.messageId);
   } else if (context.data === 'percentage_subcategory') {
-    sendSubCategoryPercentages(context.chatId, null, context.messageId);
+    sendSubCategoryPercentages(targetChatId, null, context.messageId);
   } else if (context.data === 'chart_allocation_expense') {
-    sendAllocationChart(context.chatId, null, context.messageId);
+    sendAllocationChart(targetChatId, null, context.messageId);
   } else if (context.data === 'chart_allocation_income') {
-    sendIncomeChart(context.chatId, null, context.messageId);
+    sendIncomeChart(targetChatId, null, context.messageId);
   } else if (context.data === 'chart_subcategory') {
-    sendSubCategoryChart(context.chatId, null, context.messageId);
+    sendSubCategoryChart(targetChatId, null, context.messageId);
   } else if (context.data === 'history') {
   processTransactionHistoryWithPagination(context, 1, 'all', 'asc'); // Default to page 1, all, asc
   } else if (context.data.startsWith('history_page_')) {
@@ -3445,7 +3510,7 @@ function handleCallbackQuery(callbackQuery) {
     const filter = parts[4] || 'all';
     processTransactionHistoryWithPagination(context, page, filter, sort);
   } else if (context.data === 'view_subcategory_summary') {
-    sendTotalSubCategorySummary(context.chatId, null, context.messageId);
+    sendTotalSubCategorySummary(targetChatId, null, context.messageId);
   } else if (context.data === 'view_by_subcategory') {
     processViewBySubcategory(context);
   } else if (context.data === 'view_by_allocation') {
