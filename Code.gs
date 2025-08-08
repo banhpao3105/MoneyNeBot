@@ -386,6 +386,49 @@ function editText(chatId, messageId, text, keyBoard) {
   }
 }
 
+/**
+ * Edit the tapped message to show a short loading state while processing a callback
+ */
+function showCallbackLoading(context, text) {
+  try {
+    const targetChatId = context.groupChatId || context.chatId;
+    const loadingText = text || '⏳ Đang xử lý...';
+    // Do not pass a keyboard so Telegram preserves the existing inline keyboard until we re-render
+    editText(targetChatId, context.messageId, loadingText);
+  } catch (e) {
+    Logger.log('WARN: showCallbackLoading failed: ' + e.toString());
+  }
+}
+
+/**
+ * Decide if we should show a loading edit for a given callback data
+ */
+function shouldShowLoadingForCallback(callbackData) {
+  // Skip for non-action info taps
+  if (callbackData === 'history_page_info') return false;
+  return true;
+}
+
+/**
+ * Provide context-aware loading text based on callback data
+ */
+function getLoadingTextForCallback(callbackData) {
+  try {
+    if (!callbackData) return '⏳ Đang xử lý...';
+    if (callbackData === 'history' || callbackData.indexOf('history_') === 0) return '⏳ Đang tải lịch sử...';
+    if (callbackData.indexOf('edit_transaction') === 0 || callbackData.indexOf('edit_') === 0) return '⏳ Đang mở chỉnh sửa...';
+    if (callbackData.indexOf('allocation') !== -1 || callbackData.indexOf('ALLOC') !== -1) return '⏳ Đang cập nhật hũ...';
+    if (callbackData.indexOf('subcategory') !== -1 || callbackData.indexOf('SUBCATEGORY') !== -1 || callbackData.indexOf('sub_') === 0) return '⏳ Đang cập nhật nhãn...';
+    if (callbackData.indexOf('percentage_') === 0 || callbackData.indexOf('chart_') === 0 || callbackData.indexOf('view_') === 0) return '⏳ Đang tải...';
+    if (callbackData.indexOf('export_') === 0) return '⏳ Đang xuất dữ liệu...';
+    if (callbackData.indexOf('confirm_delete') === 0) return '⏳ Đang xóa...';
+    if (callbackData === 'cancel_delete' || callbackData.indexOf('cancel') === 0) return '⏳ Đang hủy...';
+    return '⏳ Đang xử lý...';
+  } catch (e) {
+    return '⏳ Đang xử lý...';
+  }
+}
+
 // Wrapper function để compatibility với code hiện tại
 function sendMessage(chatId, text, keyBoard) {
   return sendText(chatId, text, keyBoard);
@@ -3324,6 +3367,15 @@ function handleCallbackQuery(callbackQuery) {
 
   Logger.log("CALLBACK QUERY: " + context.data + " from user " + context.chatId + " in chat type: " + context.chatType + " group: " + context.groupChatId);
 
+  // Immediately show a lightweight loading state on the tapped message
+  try {
+    if (shouldShowLoadingForCallback(context.data)) {
+      showCallbackLoading(context, getLoadingTextForCallback(context.data));
+    }
+  } catch (e) {
+    Logger.log('WARN: initial loading edit failed: ' + e.toString());
+  }
+
   // Route to specific handlers based on callback data
   if (context.data === 'connect_email') {
     processConnectEmail(context);
@@ -3532,12 +3584,16 @@ function handleMessage(message) {
   } else if (isCommand(context.text, '/tongthunhap')) {
     sendTotalIncomeSummary(context);
   } else if (isCommand(context.text, '/xemhu')) {
-    sendLoadingMessage(context.chatId, "tính toán số dư các hũ");
-    sendTotalPhanboSummary(context);
+    // Send a loading message and then edit it with the allocation summary
+    const sent = sendText(context.chatId, "⏳ Đang tính toán số dư các hũ, vui lòng chờ...");
+    const updatedContext = { ...context, messageId: sent && sent.message_id ? sent.message_id : null };
+    sendTotalPhanboSummary(updatedContext);
   } else if (isCommand(context.text, '/xemnhan')) {
-    sendLoadingMessage(context.chatId, "tính toán chi tiêu theo nhãn");
+    // Send a loading message and then edit it with the subcategory summary
+    const sent = sendText(context.chatId, "⏳ Đang tính toán chi tiêu theo nhãn, vui lòng chờ...");
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
-    sendTotalSubCategorySummary(context.chatId, entityId);
+    const loadingMessageId = sent && sent.message_id ? sent.message_id : null;
+    sendTotalSubCategorySummary(context.chatId, entityId, loadingMessageId);
   } else if (isCommand(context.text, '/tile') || isCommand(context.text, '/tylе')) {
     const entityId = context.chatType === 'private' ? context.chatId : context.chatId;
     sendPercentageSelectionMenu(context.chatId, entityId);
