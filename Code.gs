@@ -2179,6 +2179,26 @@ function clearTempTransaction(userId) {
   cache.remove('temp_transaction_' + userId);
 }
 
+// NEW: Temp transaction cache per message to support multiple pending entries
+function saveTempTransactionForMessage(messageId, transactionData) {
+  if (!messageId) return;
+  var cache = CacheService.getScriptCache();
+  cache.put('temp_tx_msg_' + messageId, JSON.stringify(transactionData), 1800); // 30 phút
+}
+
+function getTempTransactionForMessage(messageId) {
+  if (!messageId) return null;
+  var cache = CacheService.getScriptCache();
+  var data = cache.get('temp_tx_msg_' + messageId);
+  return data ? JSON.parse(data) : null;
+}
+
+function clearTempTransactionForMessage(messageId) {
+  if (!messageId) return;
+  var cache = CacheService.getScriptCache();
+  cache.remove('temp_tx_msg_' + messageId);
+}
+
 // Quản lý cache cho chỉnh sửa giao dịch (Global functions)
 function saveTransactionForEdit(userId, transactionInfo, transactionId) {
   var cache = CacheService.getScriptCache();
@@ -4116,11 +4136,14 @@ function initiateTransactionProcess(chatId, transactionData, messageId = null, c
       message = "👤 " + senderName + "\n" + message;
     }
     
-    // Gửi hoặc edit message
+    // Gửi hoặc edit message; persist temp by messageId for concurrent flows
     if (messageId) {
       editText(chatId, messageId, message, keyboard);
+      saveTempTransactionForMessage(messageId, tempTransaction);
     } else {
-      sendText(chatId, message, keyboard);
+      const sent = sendText(chatId, message, keyboard);
+      const mid = sent && sent.message_id ? sent.message_id : null;
+      if (mid) saveTempTransactionForMessage(mid, tempTransaction);
     }
     
   } catch (err) {
@@ -4363,8 +4386,12 @@ function processSubcategorySelection(context) {
       return;
     }
     
-    // Lấy thông tin giao dịch tạm từ cache (sử dụng user ID)
-    const tempTransaction = getTempTransaction(context.chatId);
+    // Lấy thông tin giao dịch tạm ưu tiên theo messageId để hỗ trợ nhiều pending
+    let tempTransaction = getTempTransactionForMessage(context.messageId);
+    if (!tempTransaction) {
+      // Fallback legacy per-user cache
+      tempTransaction = getTempTransaction(context.chatId);
+    }
     if (tempTransaction) {
       // Use the correct entity ID for transaction storage
       const entityId = tempTransaction.chatId || context.groupChatId || context.chatId;
@@ -4398,8 +4425,9 @@ function processSubcategorySelection(context) {
       };
       saveTransactionForEdit(context.chatId, transactionInfo, transactionId);
       
-      // Xóa cache tạm
-      clearTempTransaction(context.chatId);
+  // Xóa cache tạm theo message và cả fallback theo user
+  clearTempTransactionForMessage(context.messageId);
+  clearTempTransaction(context.chatId);
       
       // Thông báo thành công với keyboard chỉnh sửa (bao gồm STT)
       const typeText = tempTransaction.type === TRANSACTION_TYPE.INCOME ? "thu nhập" : "chi tiêu";
@@ -4436,7 +4464,9 @@ function processSubcategorySelection(context) {
 function processBackToAllocation(context) {
   try {
     const targetChatId = context.groupChatId || context.chatId;
-    const temp = getTempTransaction(context.chatId);
+  // Prefer message-scoped cache
+  let temp = getTempTransactionForMessage(context.messageId);
+  if (!temp) temp = getTempTransaction(context.chatId);
     if (!temp) {
       editText(targetChatId, context.messageId, "❌ Không tìm thấy giao dịch tạm. Vui lòng nhập lại /chi hoặc /thu.", null);
       return;
@@ -4472,8 +4502,10 @@ function processAllocationSelection(context) {
       return;
     }
 
-    const selectedAllocation = allocations[index];
-    const temp = getTempTransaction(context.chatId);
+  const selectedAllocation = allocations[index];
+  // Prefer message-scoped cache
+  let temp = getTempTransactionForMessage(context.messageId);
+  if (!temp) temp = getTempTransaction(context.chatId);
     if (!temp) {
       editText(targetChatId, context.messageId, "❌ Không tìm thấy giao dịch tạm. Vui lòng nhập lại /chi hoặc /thu.", null);
       return;
@@ -4481,7 +4513,8 @@ function processAllocationSelection(context) {
 
     // Update allocation in temp transaction
     temp.allocation = selectedAllocation;
-    saveTempTransaction(context.chatId, temp);
+  saveTempTransactionForMessage(context.messageId, temp);
+  saveTempTransaction(context.chatId, temp); // keep legacy fallback in sync
 
     // Show subcategory keyboard for selected allocation
     const keyboard = createSubCategoryKeyboard(selectedAllocation, false, null, index);
@@ -4504,7 +4537,8 @@ function processAllocationSelection(context) {
 function processCancelNew(context) {
   try {
     const targetChatId = context.groupChatId || context.chatId;
-    clearTempTransaction(context.chatId);
+  clearTempTransactionForMessage(context.messageId);
+  clearTempTransaction(context.chatId);
     editText(targetChatId, context.messageId, '❌ Đã hủy giao dịch.', null);
   } catch (err) {
     Logger.log("Error in processCancelNew: " + err.toString());
