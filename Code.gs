@@ -733,30 +733,16 @@ function sendTotalPhanboSummary(context) {
 
 // Hiển thị menu chọn loại tỉ lệ % (hũ hoặc nhãn)
 function sendPercentageSelectionMenu(chatId, userId, messageId) {
-  var message = "📈 <b>Chọn loại tỉ lệ % bạn muốn xem:</b>\n\n" +
-    "🏺 <b>Theo Hũ:</b> Xem tỉ lệ % chi tiêu và thu nhập theo 6 hũ tài chính\n" +
-    "🏷️ <b>Theo Nhãn:</b> Xem tỉ lệ % chi tiêu theo từng nhãn cụ thể\n\n" +
-    "💡 <i>Chọn một tùy chọn bên dưới:</i>";
+  var message = "📈 <b>Bạn muốn xem tỉ lệ % nào?</b>\n\n" +
+    "💸 <b>Chi tiêu:</b> Xem theo từng Hũ và Nhãn\n" +
+    "💰 <b>Thu nhập:</b> Phân bổ theo Hũ\n\n" +
+    "💡 <i>Chọn bên dưới:</i>";
   
   var percentageMenu = {
     "inline_keyboard": [
       [
-        {
-          text: '🏺 Tỉ lệ % Chi tiêu theo Hũ',
-          callback_data: 'percentage_allocation_expense'
-        }
-      ],
-      [
-        {
-          text: '💰 Tỉ lệ % Thu nhập theo Hũ',
-          callback_data: 'percentage_allocation_income'
-        }
-      ],
-      [
-        {
-          text: '🏷️ Tỉ lệ % Chi tiêu theo Nhãn',
-          callback_data: 'percentage_subcategory'
-        }
+        { text: '📈 Tỉ lệ chi tiêu', callback_data: 'percentage_subcategory' },
+        { text: '💰 Tỉ lệ % thu nhập', callback_data: 'percentage_allocation_income' }
       ],
       [
         {
@@ -768,7 +754,11 @@ function sendPercentageSelectionMenu(chatId, userId, messageId) {
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, percentageMenu);
+    const edited = editTextSafe(chatId, messageId, message, percentageMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, percentageMenu);
+    }
   } else {
     sendText(chatId, message, percentageMenu);
   }
@@ -784,34 +774,23 @@ function sendChartSelectionMenu(chatId, userId, messageId) {
   var chartMenu = {
     "inline_keyboard": [
       [
-        {
-          text: '🏺 Biểu đồ Chi tiêu theo Hũ',
-          callback_data: 'chart_allocation_expense'
-        }
+        { text: '🏷️ Biểu đồ Chi tiêu theo Nhãn', callback_data: 'chart_subcategory' }
       ],
       [
-        {
-          text: '💰 Biểu đồ Thu nhập theo Hũ',
-          callback_data: 'chart_allocation_income'
-        }
+        { text: '💰 Biểu đồ Thu nhập theo Hũ', callback_data: 'chart_allocation_income' }
       ],
       [
-        {
-          text: '🏷️ Biểu đồ Chi tiêu theo Nhãn',
-          callback_data: 'chart_subcategory'
-        }
-      ],
-      [
-        {
-          text: '📈 Xem Tỉ lệ %',
-          callback_data: 'show_percentage_menu'
-        }
+        { text: '📈 Xem Tỉ lệ %', callback_data: 'show_percentage_menu' }
       ]
     ]
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, chartMenu);
+    const edited = editTextSafe(chatId, messageId, message, chartMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, chartMenu);
+    }
   } else {
     sendText(chatId, message, chartMenu);
   }
@@ -874,7 +853,7 @@ function sendSubCategoryPercentages(chatId, userId, messageId) {
     // Hiển thị theo từng allocation
     for (var allocation in subCategories) {
       if (allocationTotals[allocation] > 0) {
-        message += "📁 <b>" + allocation + ":</b>\n";
+  message += "🏺 <b>" + allocation + ":</b>\n";
         
         // Sắp xếp subcategories theo % giảm dần trong allocation này
         var subCategoriesInAllocation = subCategories[allocation].filter(function(subCat) {
@@ -932,7 +911,11 @@ function sendSubCategoryPercentages(chatId, userId, messageId) {
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, subCategoryPercentageMenu);
+    const edited = editTextSafe(chatId, messageId, message, subCategoryPercentageMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, subCategoryPercentageMenu);
+    }
   } else {
     sendText(chatId, message, subCategoryPercentageMenu);
   }
@@ -1020,7 +1003,11 @@ function sendSubCategoryChart(chatId, userId, messageId) {
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, subCategoryChartMenu);
+    const edited = editTextSafe(chatId, messageId, message, subCategoryChartMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, subCategoryChartMenu);
+    }
   } else {
     sendText(chatId, message, subCategoryChartMenu);
   }
@@ -1194,30 +1181,15 @@ function sendAllocationPercentages(chatId, userId, messageId) {
   var percentageMenu = {
     "inline_keyboard": [
       [
-        {
-          text: '📊 Biểu đồ chi tiêu hũ',
-          callback_data: 'chart_allocation_expense'
-        },
-        {
-          text: '🏺 Xem số dư hũ',
-          callback_data: 'getTotalAllocationBalances'
-        }
+        { text: '📊 Biểu đồ nhãn', callback_data: 'view_subcategory_chart' },
+        { text: '🏺 Xem số dư hũ', callback_data: 'getTotalAllocationBalances' }
       ],
       [
-        {
-          text: '� Tỉ lệ % thu nhập',
-          callback_data: 'percentage_allocation_income'
-        },
-        {
-          text: '🏷️ Tỉ lệ % nhãn',
-          callback_data: 'percentage_subcategory'
-        }
+        { text: '💰 Tỉ lệ % thu nhập', callback_data: 'percentage_allocation_income' },
+        { text: '📈 Tỉ lệ chi tiêu', callback_data: 'percentage_subcategory' }
       ],
       [
-        {
-          text: '📈 Menu tỉ lệ %',
-          callback_data: 'show_percentage_menu'
-        }
+        { text: '📈 Menu tỉ lệ %', callback_data: 'show_percentage_menu' }
       ]
     ]
   };
@@ -1456,7 +1428,11 @@ function sendIncomePercentages(chatId, userId, messageId) {
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, incomeMenu);
+    const edited = editTextSafe(chatId, messageId, message, incomeMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, incomeMenu);
+    }
   } else {
     sendText(chatId, message, incomeMenu);
   }
@@ -1532,7 +1508,11 @@ function sendIncomeChart(chatId, userId, messageId) {
   };
   
   if (messageId) {
-    editText(chatId, messageId, message, incomeChartMenu);
+    const edited = editTextSafe(chatId, messageId, message, incomeChartMenu);
+    if (!edited) {
+      deleteMessage(chatId, messageId);
+      sendText(chatId, message, incomeChartMenu);
+    }
   } else {
     sendText(chatId, message, incomeChartMenu);
   }
@@ -1805,36 +1785,39 @@ function createAllocationViewKeyboard() {
 function getTotalSubCategoryBalances(userId) {
   const sheet = getSheet(userId);
   const lastRow = sheet.getLastRow();
-  
-  if (lastRow < 2) return {}; // No data rows
-  
+  if (lastRow < 3) return {}; // Need at least header + one data row
+
+  // Determine schema (private: 7 cols; group: 8 cols)
+  const allData = sheet.getDataRange().getValues();
+  if (allData.length < 3) return {};
+  const firstDataRow = allData[2];
+  const isGroupChat = firstDataRow.length >= 8;
+
+  // Choose correct starting column for partial read
+  // Private: D..G (4..7). Group: E..H (5..8)
+  const startCol = isGroupChat ? 5 : 4;
+  const data = sheet.getRange(2, startCol, lastRow - 1, 4).getValues();
+
   const balances = {};
-  
-  // Initialize balances cho tất cả subcategories
+  // Initialize all subcategory balances to 0
   for (const allocation in subCategories) {
     for (let i = 0; i < subCategories[allocation].length; i++) {
-      const subCategory = subCategories[allocation][i];
-      balances[subCategory] = 0;
+      balances[subCategories[allocation][i]] = 0;
     }
   }
-  
-  // Only read columns D, F, G (Amount, Type, SubCategory) from row 2 to last row
-  const data = sheet.getRange(2, 4, lastRow - 1, 4).getValues(); // D, E, F, G columns
-  
-  // Đọc data từ sheet và tính tổng
+
+  // Offsets within the 4-column window (Amount, Allocation, Type, SubCategory)
+  const AMOUNT = 0, TYPE = 2, SUB = 3;
+
   for (let i = 0; i < data.length; i++) {
-    const amount = data[i][0];        // Amount ở cột D (index 0 trong range)
-    const type = data[i][2];          // Type ở cột F (index 2 trong range)
-    const subCategory = data[i][3];   // SubCategory ở cột G (index 3 trong range)
-    
-    if (subCategory && balances.hasOwnProperty(subCategory)) {
-      if (type === TRANSACTION_TYPE.EXPENSE) {
-        balances[subCategory] += amount;
-      }
-      // Chỉ tính chi tiêu, không tính thu nhập cho subcategories
+    const amount = parseFloat(data[i][AMOUNT]) || 0;
+    const type = data[i][TYPE];
+    const subCategory = data[i][SUB];
+    if (!subCategory || !(subCategory in balances)) continue;
+    if (isTypeMatch(type, TRANSACTION_TYPE.EXPENSE)) {
+      balances[subCategory] += amount;
     }
   }
-  
   return balances;
 }
 
@@ -1844,36 +1827,36 @@ function getTotalSubCategoryBalances(userId) {
 function getTotalSubCategoryBalancesByAllocation(userId, allocation) {
   const sheet = getSheet(userId);
   const lastRow = sheet.getLastRow();
-  
-  if (lastRow < 2) return {}; // No data rows
-  
+  if (lastRow < 3) return {};
+
+  const allData = sheet.getDataRange().getValues();
+  if (allData.length < 3) return {};
+  const firstDataRow = allData[2];
+  const isGroupChat = firstDataRow.length >= 8;
+
+  const startCol = isGroupChat ? 5 : 4; // Group: E..H, Private: D..G
+  const data = sheet.getRange(2, startCol, lastRow - 1, 4).getValues();
+
   const balances = {};
-  
-  // Initialize balances cho subcategories của allocation này
   if (subCategories[allocation]) {
     for (let i = 0; i < subCategories[allocation].length; i++) {
-      const subCategory = subCategories[allocation][i];
-      balances[subCategory] = 0;
+      balances[subCategories[allocation][i]] = 0;
     }
   }
-  
-  // Only read columns D, E, F, G (Amount, Allocation, Type, SubCategory) from row 2 to last row
-  const data = sheet.getRange(2, 4, lastRow - 1, 4).getValues(); // D, E, F, G columns
-  
-  // Đọc data và tính tổng cho allocation cụ thể
+
+  const AMOUNT = 0, ALLOC = 1, TYPE = 2, SUB = 3;
+
   for (let i = 0; i < data.length; i++) {
-    const amount = data[i][0];           // Amount ở cột D (index 0 trong range)
-    const itemAllocation = data[i][1];   // Allocation ở cột E (index 1 trong range)
-    const type = data[i][2];             // Type ở cột F (index 2 trong range)
-    const subCategory = data[i][3];      // SubCategory ở cột G (index 3 trong range)
-    
-    if (itemAllocation === allocation && subCategory && balances.hasOwnProperty(subCategory)) {
-      if (type === TRANSACTION_TYPE.EXPENSE) {
+    const amount = parseFloat(data[i][AMOUNT]) || 0;
+    const itemAllocation = data[i][ALLOC];
+    const type = data[i][TYPE];
+    const subCategory = data[i][SUB];
+    if (itemAllocation === allocation && subCategory && (subCategory in balances)) {
+      if (isTypeMatch(type, TRANSACTION_TYPE.EXPENSE)) {
         balances[subCategory] += amount;
       }
     }
   }
-  
   return balances;
 }
 
@@ -1898,7 +1881,7 @@ function sendTotalSubCategorySummary(chatId, userId, messageId) {
     }
     
     if (hasData) {
-      message += "<b>📁 " + allocation + ":</b>\n";
+      message += "<b>🏺 " + allocation + ":</b>\n";
       for (var i = 0; i < subCategories[allocation].length; i++) {
         var subCategory = subCategories[allocation][i];
         if (subCategoryBalances[subCategory] > 0) {
@@ -1997,7 +1980,7 @@ function createSubCategoryViewKeyboard() {
   for (var allocation in subCategories) {
     // Thêm header cho mỗi allocation
     keyboard.push([{
-      text: "📁 " + allocation,
+      text: "🏺 " + allocation,
       callback_data: "view_allocation_subs_" + allocation
     }]);
     
@@ -3471,21 +3454,21 @@ function handleCallbackQuery(callbackQuery) {
   } else if (context.data === 'getTotalAllocationBalances') {
     processShowAllocationBalances(context);
   } else if (context.data === 'show_percentage_menu') {
-    sendPercentageSelectionMenu(targetChatId, null, context.messageId);
+    sendPercentageSelectionMenu(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'show_chart_menu') {
-    sendChartSelectionMenu(targetChatId, null, context.messageId);
+    sendChartSelectionMenu(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'percentage_allocation_expense') {
-    sendAllocationPercentages(targetChatId, null, context.messageId);
+    sendAllocationPercentages(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'percentage_allocation_income') {
-    sendIncomePercentages(targetChatId, null, context.messageId);
+    sendIncomePercentages(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'percentage_subcategory') {
-    sendSubCategoryPercentages(targetChatId, null, context.messageId);
+    sendSubCategoryPercentages(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'chart_allocation_expense') {
-    sendAllocationChart(targetChatId, null, context.messageId);
+    sendAllocationChart(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'chart_allocation_income') {
-    sendIncomeChart(targetChatId, null, context.messageId);
+    sendIncomeChart(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'chart_subcategory') {
-    sendSubCategoryChart(targetChatId, null, context.messageId);
+    sendSubCategoryChart(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'history') {
   processTransactionHistoryWithPagination(context, 1, 'all', 'asc'); // Default to page 1, all, asc
   } else if (context.data.startsWith('history_page_')) {
@@ -3511,6 +3494,18 @@ function handleCallbackQuery(callbackQuery) {
     processTransactionHistoryWithPagination(context, page, filter, sort);
   } else if (context.data === 'view_subcategory_summary') {
     sendTotalSubCategorySummary(targetChatId, null, context.messageId);
+  } else if (context.data === 'view_subcategory_percentage') {
+    sendSubCategoryPercentages(targetChatId, targetChatId, context.messageId);
+  } else if (context.data === 'view_subcategory_chart') {
+    sendSubCategoryChart(targetChatId, targetChatId, context.messageId);
+  } else if (context.data === 'view_percentage') {
+    sendAllocationPercentages(targetChatId, targetChatId, context.messageId);
+  } else if (context.data === 'view_chart') {
+    sendAllocationChart(targetChatId, targetChatId, context.messageId);
+  } else if (context.data === 'view_income_percentage') {
+    sendIncomePercentages(targetChatId, targetChatId, context.messageId);
+  } else if (context.data === 'view_income_chart') {
+    sendIncomeChart(targetChatId, targetChatId, context.messageId);
   } else if (context.data === 'view_by_subcategory') {
     processViewBySubcategory(context);
   } else if (context.data === 'view_by_allocation') {
