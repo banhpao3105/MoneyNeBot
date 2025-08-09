@@ -767,17 +767,15 @@ function sendPercentageSelectionMenu(chatId, userId, messageId) {
 // Hiển thị menu chọn loại biểu đồ (hũ hoặc nhãn)
 function sendChartSelectionMenu(chatId, userId, messageId) {
   var message = "📊 <b>Chọn loại biểu đồ bạn muốn xem:</b>\n\n" +
-    "🏺 <b>Theo Hũ:</b> Biểu đồ cột ASCII cho chi tiêu và thu nhập theo hũ\n" +
+    "🏺 <b>Theo Hũ:</b> Biểu đồ cột ASCII cho chi tiêu theo hũ\n" +
     "🏷️ <b>Theo Nhãn:</b> Biểu đồ top nhãn chi tiêu với ranking\n\n" +
     "💡 <i>Chọn một tùy chọn bên dưới:</i>";
   
   var chartMenu = {
     "inline_keyboard": [
       [
+        { text: '🏺 Biểu đồ Chi tiêu theo Hũ', callback_data: 'chart_allocation_expense' },
         { text: '🏷️ Biểu đồ Chi tiêu theo Nhãn', callback_data: 'chart_subcategory' }
-      ],
-      [
-        { text: '💰 Biểu đồ Thu nhập theo Hũ', callback_data: 'chart_allocation_income' }
       ],
       [
         { text: '📈 Xem Tỉ lệ %', callback_data: 'show_percentage_menu' }
